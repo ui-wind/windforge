@@ -117,6 +117,8 @@ Implement:
 - kill criteria gate: torn frames under fast condition toggling, consistency
   under concurrent React commits, unmount race during condition change
   (full criteria in `docs/specs/NATIVE_DELIVERY_PROTOCOL_SPEC.md`)
+- evaluate the `nativeProps_DEPRECATED` persistence option as a complement or
+  replacement for commit-hook re-merge (`docs/reference/UNISTYLES_REFERENCE.md`)
 
 Benchmark before claiming anything. A "zero re-render" statement may only
 appear with the measurement that backs it (architecture §9/§20).

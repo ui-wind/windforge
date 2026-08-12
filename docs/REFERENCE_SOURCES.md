@@ -49,6 +49,22 @@ Use NativeWind primarily to study:
 - Metro integration
 - prop remapping
 
+### react-native-unistyles
+
+- https://www.unistyles.dev
+- https://github.com/jpudysz/react-native-unistyles
+- Local clone: `../react-native-unistyles`
+
+Use react-native-unistyles primarily to study:
+
+- C++ shadow-tree updates outside React (`ShadowTreeManager`,
+  `UIManager::updateShadowTree`)
+- `nativeProps_DEPRECATED` persistence and RN precedence semantics
+- dependency-keyed update scoping
+- suspend/resume coordination with animations
+
+Findings are recorded in `reference/UNISTYLES_REFERENCE.md`.
+
 ## Important research principle
 
 These sources define reference behavior, not Windforge implementation.

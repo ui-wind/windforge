@@ -101,6 +101,15 @@ passed through untouched, mirroring Meta's own `AnimationBackendCommitHook`
 guard. Exceptions never cross the `noexcept` boundary into the render
 pipeline — pending bindings retry on the next commit.
 
+**Persistence alternative (Phase 4 option).** Instead of re-merging on every
+React commit, pushed styles can be merged into the node family's
+`nativeProps_DEPRECATED` field: RN's own `cloneNode` re-applies it on React
+commits and gives it precedence over React's raw props (this is how
+react-native-unistyles persists). Cheaper per commit, but it relies on a
+deprecated RN field and needs explicit cleanup on re-link. The commit hook
+stays primary until benchmarks say otherwise; see
+`reference/UNISTYLES_REFERENCE.md` for the full trade-off table.
+
 ## ShadowTree
 
 ShadowTree integration is a performance optimization and must be isolated.
