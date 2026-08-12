@@ -1,0 +1,18 @@
+node_modules/
+dist/
+.turbo/
+coverage/
+*.tsbuildinfo
+
+# Expo / React Native
+apps/example/.expo/
+apps/example/ios/Pods/
+apps/example/ios/build/
+apps/example/android/.gradle/
+apps/example/android/app/build/
+apps/example/android/build/
+.expo/
+
+# OS / editor
+.DS_Store
+*.log

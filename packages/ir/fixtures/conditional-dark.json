@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "declarations": [
+    { "property": "backgroundColor", "value": { "kind": "color", "value": "#fafafa" }, "priority": 1, "sourceOrder": 0 }
+  ],
+  "conditions": [
+    { "kind": "color-scheme", "id": "cond-dark", "scheme": "dark" }
+  ],
+  "variants": [
+    {
+      "id": "variant-dark-bg",
+      "conditionIds": ["cond-dark"],
+      "declarations": [
+        { "property": "backgroundColor", "value": { "kind": "color", "value": "#18181b" }, "priority": 2, "sourceOrder": 1 }
+      ]
+    }
+  ],
+  "metadata": { "source": "app/Home.tsx", "candidates": ["bg-zinc-50", "dark:bg-zinc-900"] }
+}

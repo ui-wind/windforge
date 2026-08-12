@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "declarations": [],
+  "animations": [
+    {
+      "name": "fade-in-up",
+      "keyframes": [
+        {
+          "offset": 0,
+          "declarations": [
+            { "property": "opacity", "value": { "kind": "number", "value": 0 } },
+            { "property": "transform", "value": { "kind": "transform", "operations": [ { "operation": "translateY", "value": { "kind": "dimension", "value": 24, "unit": "px" } } ] } }
+          ]
+        },
+        {
+          "offset": 1,
+          "declarations": [
+            { "property": "opacity", "value": { "kind": "number", "value": 1 } },
+            { "property": "transform", "value": { "kind": "transform", "operations": [ { "operation": "translateY", "value": { "kind": "dimension", "value": 0, "unit": "px" } } ] } }
+          ]
+        }
+      ],
+      "duration": { "ms": 400 },
+      "timingFunction": { "kind": "cubic-bezier", "points": [0.22, 1, 0.36, 1] },
+      "fillMode": "both"
+    }
+  ],
+  "metadata": { "source": "components/Hero.tsx", "candidates": ["animate-fade-in-up"] }
+}

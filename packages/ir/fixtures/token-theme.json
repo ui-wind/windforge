@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "declarations": [
+    { "property": "backgroundColor", "value": { "kind": "token", "ref": "colors.primary", "category": "color" }, "priority": 1, "sourceOrder": 0 },
+    { "property": "borderRadius", "value": { "kind": "token", "ref": "radius.lg", "category": "radius" }, "priority": 1, "sourceOrder": 1 }
+  ],
+  "tokens": [
+    { "ref": "colors.primary", "category": "color", "value": { "kind": "color", "value": "#3b82f6" } },
+    { "ref": "radius.lg", "category": "radius", "value": { "kind": "dimension", "value": 8, "unit": "px" } }
+  ],
+  "metadata": { "source": "components/Card.tsx", "candidates": ["bg-primary", "rounded-lg"] }
+}

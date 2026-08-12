@@ -1,0 +1,21 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`IR fixtures > animation.json canonical output + hash snapshot 1`] = `"{"animations":[{"duration":{"ms":400},"fillMode":"both","keyframes":[{"declarations":[{"property":"opacity","value":{"kind":"number","value":0}},{"property":"transform","value":{"kind":"transform","operations":[{"operation":"translateY","value":{"kind":"dimension","unit":"px","value":24}}]}}],"offset":0},{"declarations":[{"property":"opacity","value":{"kind":"number","value":1}},{"property":"transform","value":{"kind":"transform","operations":[{"operation":"translateY","value":{"kind":"dimension","unit":"px","value":0}}]}}],"offset":1}],"name":"fade-in-up","timingFunction":{"kind":"cubic-bezier","points":[0.22,1,0.36,1]}}],"declarations":[],"version":1}"`;
+
+exports[`IR fixtures > animation.json canonical output + hash snapshot 2`] = `"32fedc5b"`;
+
+exports[`IR fixtures > conditional-dark.json canonical output + hash snapshot 1`] = `"{"conditions":[{"id":"cond-dark","kind":"color-scheme","scheme":"dark"}],"declarations":[{"priority":1,"property":"backgroundColor","sourceOrder":0,"value":{"kind":"color","value":"#fafafa"}}],"variants":[{"conditionIds":["cond-dark"],"declarations":[{"priority":2,"property":"backgroundColor","sourceOrder":1,"value":{"kind":"color","value":"#18181b"}}],"id":"variant-dark-bg"}],"version":1}"`;
+
+exports[`IR fixtures > conditional-dark.json canonical output + hash snapshot 2`] = `"e452f81d"`;
+
+exports[`IR fixtures > empty.json canonical output + hash snapshot 1`] = `"{"declarations":[],"version":1}"`;
+
+exports[`IR fixtures > empty.json canonical output + hash snapshot 2`] = `"5b47000b"`;
+
+exports[`IR fixtures > static-utility.json canonical output + hash snapshot 1`] = `"{"declarations":[{"priority":1,"property":"padding","sourceOrder":0,"value":{"kind":"number","value":16}},{"priority":1,"property":"backgroundColor","sourceOrder":1,"value":{"kind":"color","value":"#09090b"}}],"version":1}"`;
+
+exports[`IR fixtures > static-utility.json canonical output + hash snapshot 2`] = `"4b579ffa"`;
+
+exports[`IR fixtures > token-theme.json canonical output + hash snapshot 1`] = `"{"declarations":[{"priority":1,"property":"backgroundColor","sourceOrder":0,"value":{"category":"color","kind":"token","ref":"colors.primary"}},{"priority":1,"property":"borderRadius","sourceOrder":1,"value":{"category":"radius","kind":"token","ref":"radius.lg"}}],"tokens":[{"category":"color","ref":"colors.primary","value":{"kind":"color","value":"#3b82f6"}},{"category":"radius","ref":"radius.lg","value":{"kind":"dimension","unit":"px","value":8}}],"version":1}"`;
+
+exports[`IR fixtures > token-theme.json canonical output + hash snapshot 2`] = `"83f82a96"`;

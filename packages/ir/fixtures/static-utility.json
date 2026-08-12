@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "declarations": [
+    { "property": "padding", "value": { "kind": "number", "value": 16 }, "priority": 1, "sourceOrder": 0 },
+    { "property": "backgroundColor", "value": { "kind": "color", "value": "#09090b" }, "priority": 1, "sourceOrder": 1 }
+  ],
+  "metadata": { "source": "app/Home.tsx", "candidates": ["p-4", "bg-zinc-950"] }
+}
