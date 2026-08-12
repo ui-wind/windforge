@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { withWindforge } from '../src/index.js';
+import type { ResolverContextLike } from '../src/resolver.js';
 
 describe('withWindforge', () => {
   it('returns a config with windforge options attached', () => {
@@ -9,6 +10,24 @@ describe('withWindforge', () => {
 
     expect(config.windforge.input).toBe('./global.css');
     expect(config.resolver?.sourceExts).toEqual(['ts', 'tsx']);
+  });
+
+  it('installs a resolveRequest that maps windforge/generated', () => {
+    const config = withWindforge({});
+    const resolveRequest = config.resolver?.resolveRequest as (
+      context: ResolverContextLike,
+      moduleName: string,
+      platform: string | null | undefined,
+    ) => { type: string; filePath: string };
+    expect(typeof resolveRequest).toBe('function');
+
+    const context = {
+      resolveRequest: () => ({ type: 'sourceFile', filePath: '/never.js' }),
+    } as unknown as ResolverContextLike;
+    const resolution = resolveRequest(context, 'windforge/generated', null);
+    expect(resolution.type).toBe('sourceFile');
+    expect(resolution.filePath).toContain('.windforge');
+    expect(resolution.filePath).toContain('generated.js');
   });
 
   it('applies defaults for outputDir and diagnostics', () => {

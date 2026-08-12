@@ -16,7 +16,7 @@ export type WindforgeMetroConfig = {
   diagnostics?: boolean;
 };
 
-/** Structural subset of Metro's IncomingConfig we depend on in Phase 0. */
+/** Structural subset of Metro's IncomingConfig we depend on. */
 export type MetroConfigLike = {
   transformer?: {
     getTransformOptions?: unknown;
@@ -24,6 +24,7 @@ export type MetroConfigLike = {
   };
   resolver?: {
     sourceExts?: string[];
+    resolveRequest?: unknown;
     [key: string]: unknown;
   };
   watchFolders?: string[];

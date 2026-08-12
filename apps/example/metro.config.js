@@ -1,14 +1,30 @@
 // Windforge Metro integration.
 //
-// Phase 0: withWindforge attaches Windforge options without changing Metro's
-// transform behavior. Phase 1 plugs the compile pipeline
-// (source discovery -> Tailwind v4 -> CSS AST -> Style IR) into this seam, so
-// this file should not need to change between phases.
+// compileWindforge runs the build pipeline (source discovery -> Tailwind v4 ->
+// CSS AST -> Style IR) and writes the generated runtime module; withWindforge
+// installs the resolver hook that maps `windforge/generated` to it.
+const path = require('node:path');
 const { getDefaultConfig } = require('expo/metro-config');
-const { withWindforge } = require('@windforge/metro');
+const { compileWindforge, withWindforge } = require('@windforge/metro');
 
-const config = getDefaultConfig(__dirname);
+module.exports = (async () => {
+  const outputDir = path.resolve(__dirname, '.windforge');
 
-module.exports = withWindforge(config, {
-  input: './src/global.css',
-});
+  await compileWindforge({
+    entry: path.resolve(__dirname, './src/global.css'),
+    base: __dirname,
+    outputDir,
+  });
+
+  const config = getDefaultConfig(__dirname);
+
+  // Monorepo: let Metro watch workspace packages outside the app root so it
+  // can resolve @windforge/* through pnpm symlinks.
+  const workspaceRoot = path.resolve(__dirname, '../..');
+  config.watchFolders = [...(config.watchFolders ?? []), workspaceRoot];
+
+  return withWindforge(config, {
+    input: './src/global.css',
+    outputDir,
+  });
+})();

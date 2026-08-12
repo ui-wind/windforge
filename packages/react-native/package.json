@@ -1,7 +1,7 @@
 {
-  "name": "@windforge/metro",
+  "name": "@windforge/react-native",
   "version": "0.0.1",
-  "description": "Windforge Metro integration — build-time style compilation for React Native",
+  "description": "Windforge runtime for React Native — artifact registry, className resolution, styled components",
   "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",
@@ -22,11 +22,17 @@
     "clean": "rm -rf dist *.tsbuildinfo"
   },
   "dependencies": {
-    "@windforge/ir": "workspace:*",
-    "@windforge/tailwind": "workspace:*"
+    "@windforge/ir": "workspace:*"
+  },
+  "peerDependencies": {
+    "react": ">=19",
+    "react-native": ">=0.86"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",
+    "@types/react": "^19.2.0",
+    "react": "19.2.3",
+    "react-native": "0.86.2",
     "typescript": "^5.9.2",
     "vitest": "^3.2.4"
   }

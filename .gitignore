@@ -4,6 +4,9 @@ dist/
 coverage/
 *.tsbuildinfo
 
+# Windforge generated artifacts
+apps/example/.windforge/
+
 # Expo / React Native
 apps/example/.expo/
 apps/example/ios/Pods/

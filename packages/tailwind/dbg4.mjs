@@ -1,0 +1,14 @@
+import { collectStylesheet } from './dist/css/collect.js';
+import { substituteVars, resolveNumeric } from './dist/css/resolve.js';
+import { compileTailwindCss } from './dist/compile.js';
+import { scanCandidates } from './dist/scan.js';
+const candidates = scanCandidates('tests/fixtures/app');
+const { css } = await compileTailwindCss('tests/fixtures/app/src/global.css', candidates);
+const collected = collectStylesheet(css);
+console.log('vars:', [...collected.variables.keys()].slice(0, 10), '... total', collected.variables.size);
+const p4 = collected.classes.get('p-4');
+console.log('p-4 rules:', JSON.stringify(p4?.[0]?.declarations?.[0]?.value, null, 1));
+const diagnostics = [];
+const sub = substituteVars(p4[0].declarations[0].value, collected.variables);
+console.log('substituted:', JSON.stringify(sub, null, 1));
+console.log('resolved:', resolveNumeric(p4[0].declarations[0].value, collected.variables, diagnostics), diagnostics);

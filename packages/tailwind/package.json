@@ -1,7 +1,7 @@
 {
-  "name": "@windforge/metro",
+  "name": "@windforge/tailwind",
   "version": "0.0.1",
-  "description": "Windforge Metro integration — build-time style compilation for React Native",
+  "description": "Windforge Tailwind v4 frontend — compiles Tailwind CSS to Style IR",
   "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",
@@ -22,10 +22,15 @@
     "clean": "rm -rf dist *.tsbuildinfo"
   },
   "dependencies": {
+    "@tailwindcss/node": "^4.1.11",
+    "@tailwindcss/oxide": "^4.1.11",
     "@windforge/ir": "workspace:*",
-    "@windforge/tailwind": "workspace:*"
+    "culori": "^4.0.2",
+    "lightningcss": "^1.30.1",
+    "tailwindcss": "^4.1.11"
   },
   "devDependencies": {
+    "@types/culori": "^4.0.1",
     "@types/node": "^26.2.0",
     "typescript": "^5.9.2",
     "vitest": "^3.2.4"

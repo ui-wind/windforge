@@ -6,6 +6,7 @@
     "@expo/ui": "~57.0.10",
     "@windforge/ir": "workspace:*",
     "@windforge/metro": "workspace:*",
+    "@windforge/react-native": "workspace:*",
     "expo": "~57.0.12",
     "expo-constants": "~57.0.10",
     "expo-device": "~57.0.1",
@@ -31,6 +32,7 @@
   },
   "devDependencies": {
     "@types/react": "~19.2.2",
+    "tailwindcss": "^4.1.11",
     "typescript": "~6.0.3"
   },
   "scripts": {

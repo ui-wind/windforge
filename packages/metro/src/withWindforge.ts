@@ -1,13 +1,30 @@
 /**
  * `withWindforge` — Windforge's Metro integration.
  *
- * Phase 0 skeleton: wraps the existing Metro config without altering
- * transform behavior, and validates Windforge options. The real pipeline
- * (source discovery → Tailwind v4 compile → CSS AST → Style IR → runtime
- * artifacts) plugs in here in Phase 1; this wrapper owns the seam so app
- * `metro.config.js` files do not change between phases.
+ * Wraps the existing Metro config and installs the resolver hook that maps
+ * the virtual module `windforge/generated` to the compiled artifact file.
+ * The compile step itself runs in `compileWindforge` (async metro config) so
+ * app `metro.config.js` files stay declarative:
+ *
+ * ```js
+ * module.exports = async () => {
+ *   const { getDefaultConfig } = require('expo/metro-config');
+ *   const { compileWindforge, withWindforge } = require('@windforge/metro');
+ *   await compileWindforge({ entry: './src/global.css' });
+ *   return withWindforge(getDefaultConfig(__dirname), {
+ *     input: './src/global.css',
+ *   });
+ * };
+ * ```
  */
+import { join, resolve } from 'node:path';
 import type { MetroConfigLike, WindforgeMetroConfig } from './config.js';
+import { GENERATED_FILE_NAME } from './compiler.js';
+import {
+  windforgeResolveRequest,
+  type ResolutionLike,
+  type ResolverContextLike,
+} from './resolver.js';
 
 export type WindforgeEnabledConfig = MetroConfigLike & {
   /** Attached so later phases (and diagnostics) can find the config. */
@@ -21,16 +38,9 @@ const DEFAULTS = {
 } as const;
 
 /**
- * Wrap a Metro config with Windforge.
- *
- * ```js
- * // metro.config.js
- * const { getDefaultConfig } = require('expo/metro-config');
- * const { withWindforge } = require('@windforge/metro');
- * module.exports = withWindforge(getDefaultConfig(__dirname), {
- *   input: './global.css',
- * });
- * ```
+ * Wrap a Metro config with Windforge. Installs the `windforge/generated`
+ * resolver; expects `compileWindforge` to have run (or to run before Metro
+ * serves) so the artifact file exists.
  */
 export function withWindforge(
   metroConfig: MetroConfigLike,
@@ -43,11 +53,26 @@ export function withWindforge(
     );
   }
 
+  const outputDir = windforge.outputDir ?? DEFAULTS.outputDir;
+  const outputFile = join(resolve(outputDir), GENERATED_FILE_NAME);
+
+  const existingResolveRequest = metroConfig.resolver?.resolveRequest as
+    | ((
+        context: ResolverContextLike,
+        moduleName: string,
+        platform: string | null | undefined,
+      ) => ResolutionLike)
+    | undefined;
+
   const config: WindforgeEnabledConfig = {
     ...metroConfig,
+    resolver: {
+      ...metroConfig.resolver,
+      resolveRequest: windforgeResolveRequest(outputFile, existingResolveRequest),
+    },
     windforge: {
       ...windforge,
-      outputDir: windforge.outputDir ?? DEFAULTS.outputDir,
+      outputDir,
       diagnostics: windforge.diagnostics ?? DEFAULTS.diagnostics,
     },
   };

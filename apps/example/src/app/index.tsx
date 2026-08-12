@@ -1,98 +1,39 @@
-import * as Device from 'expo-device';
-import { Platform, StyleSheet } from 'react-native';
+import { Pressable, Text, View } from '@windforge/react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-
-import { AnimatedIcon } from '@/components/animated-icon';
-import { HintRow } from '@/components/hint-row';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { WebBadge } from '@/components/web-badge';
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
-
-function getDevMenuHint() {
-  if (Platform.OS === 'web') {
-    return <ThemedText type="small">use browser devtools</ThemedText>;
-  }
-  if (Device.isDevice) {
-    return (
-      <ThemedText type="small">
-        shake device or press <ThemedText type="code">m</ThemedText> in terminal
-      </ThemedText>
-    );
-  }
-  const shortcut = Platform.OS === 'android' ? 'cmd+m (or ctrl+m)' : 'cmd+d';
-  return (
-    <ThemedText type="small">
-      press <ThemedText type="code">{shortcut}</ThemedText>
-    </ThemedText>
-  );
-}
 
 export default function HomeScreen() {
   return (
-    <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea}>
-        <ThemedView style={styles.heroSection}>
-          <AnimatedIcon />
-          <ThemedText type="title" style={styles.title}>
-            Welcome to&nbsp;Expo
-          </ThemedText>
-        </ThemedView>
+    <View className="flex-1 bg-zinc-950 dark:bg-zinc-900">
+      <SafeAreaView style={{ flex: 1 }}>
+        <View className="flex-1 gap-4 p-6 sm:p-2">
+          <Text className="text-3xl font-bold text-zinc-100 dark:text-zinc-300">Windforge</Text>
+          <Text className="text-base text-zinc-400 dark:text-zinc-500">
+            Tailwind CSS utilities, resolved to native styles at build time.
+          </Text>
 
-        <ThemedText type="code" style={styles.code}>
-          get started
-        </ThemedText>
+          <View className="mt-2 gap-3">
+            <View className="rounded-lg bg-accent p-4">
+              <Text className="text-sm font-semibold text-white">
+                bg-accent — a custom @theme token
+              </Text>
+            </View>
 
-        <ThemedView type="backgroundElement" style={styles.stepContainer}>
-          <HintRow
-            title="Try editing"
-            hint={<ThemedText type="code">src/app/index.tsx</ThemedText>}
-          />
-          <HintRow title="Dev tools" hint={getDevMenuHint()} />
-          <HintRow
-            title="Fresh start"
-            hint={<ThemedText type="code">npm run reset-project</ThemedText>}
-          />
-        </ThemedView>
+            <View className="rounded-lg bg-white p-4 ios:bg-emerald-500">
+              <Text className="text-sm font-semibold text-zinc-900 ios:text-white">
+                ios:bg-emerald-500 — a platform variant
+              </Text>
+            </View>
+          </View>
 
-        {Platform.OS === 'web' && <WebBadge />}
+          <Pressable className="mt-4 rounded-lg bg-accent px-6 py-3">
+            <Text className="text-center text-base font-semibold text-white">Styled Pressable</Text>
+          </Pressable>
+
+          <Text className="text-xs text-zinc-500">
+            dark: variants follow the system color scheme. sm: padding kicks in on narrow windows.
+          </Text>
+        </View>
       </SafeAreaView>
-    </ThemedView>
+    </View>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    flexDirection: 'row',
-  },
-  safeArea: {
-    flex: 1,
-    paddingHorizontal: Spacing.four,
-    alignItems: 'center',
-    gap: Spacing.three,
-    paddingBottom: BottomTabInset + Spacing.three,
-    maxWidth: MaxContentWidth,
-  },
-  heroSection: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    flex: 1,
-    paddingHorizontal: Spacing.four,
-    gap: Spacing.four,
-  },
-  title: {
-    textAlign: 'center',
-  },
-  code: {
-    textTransform: 'uppercase',
-  },
-  stepContainer: {
-    gap: Spacing.three,
-    alignSelf: 'stretch',
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.four,
-    borderRadius: Spacing.four,
-  },
-});
