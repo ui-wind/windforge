@@ -1,6 +1,13 @@
 # Windforge Implementation Roadmap
 
-## Phase 0 — Architecture foundation
+The phase order reflects the architectural anchor from 2026-08: **native delivery
+is the primary path for dynamic style updates on native platforms**, not a
+late-stage optimization. Build-time resolution (Phases 0–1) produces the style
+map; the native layer's job is delivering updates into Fabric's commit
+transaction without forcing React re-renders. JS baseline remains the default
+runtime, the fallback, and the parity reference for the web backend.
+
+## Phase 0 — Architecture foundation ✅
 
 Goal: establish boundaries before optimization.
 
@@ -18,7 +25,9 @@ Implement:
 
 Do NOT implement C++ yet.
 
-## Phase 1 — Tailwind core
+Status: done (commit `2cd458d`).
+
+## Phase 1 — Tailwind core ✅
 
 Implement:
 
@@ -48,6 +57,11 @@ Target:
 
 should compile deterministically.
 
+Status: end-to-end done (commit `805ec9e`) — build-time pipeline
+(`tailwind → lightningcss → IR → artifact`) plus the `@windforge/react-native`
+runtime (`registry`, condition evaluation, cached `resolveClassName`,
+provider + styled components). Runtime parsing remains a fallback only.
+
 ## Phase 2 — Web backend
 
 Implement React Native Web backend alongside the native baseline.
@@ -62,7 +76,47 @@ Requirements:
 - CSS variables
 - SSR-safe output
 
-## Phase 3 — Dynamic runtime
+## Phase 3 — Native delivery foundation
+
+Goal: restructure the runtime around a `StyleBackend` interface and land the
+first native delivery path — the piggyback commit mode proven by the Fabric
+commit-hook spike (`spikes/fabric-commit-hook/`, verdict GO).
+
+Implement:
+
+- `StyleBackend` interface with `js-baseline` default and `fabric` opt-in
+- JS↔native delivery protocol (`docs/specs/NATIVE_DELIVERY_PROTOCOL_SPEC.md`):
+  `registerStyles`, `link`, `suspend`, `unlink`, `updateStyles`,
+  `getDiagnostics`
+- artifact sync: push the resolved `className → style` map to the native
+  registry
+- mount/unmount bindings (`link`/`unlink`) from styled components
+- condition ownership: JS observes `Appearance`/`Dimensions`, diffs unique
+  classNames, pushes a single update per change — no React re-render of the
+  styled tree
+- piggyback commit: merge pending styles into React commits via
+  `UIManagerCommitHook::shadowTreeWillCommit`
+- promote the spike C++ core into the package build (podspec/Gradle, module
+  registration, iOS first, then Android UIManager acquisition)
+
+Do NOT implement direct native commits yet — that is Phase 4.
+
+## Phase 4 — Native direct commit
+
+Goal: condition-only updates (dark mode toggle, rotation, breakpoint change)
+commit without riding on any React commit at all.
+
+Implement:
+
+- `ShadowTreeSynchronizer` — native-initiated commit of style-only changes
+- kill criteria gate: torn frames under fast condition toggling, consistency
+  under concurrent React commits, unmount race during condition change
+  (full criteria in `docs/specs/NATIVE_DELIVERY_PROTOCOL_SPEC.md`)
+
+Benchmark before claiming anything. A "zero re-render" statement may only
+appear with the measurement that backs it (architecture §9/§20).
+
+## Phase 5 — Dynamic runtime
 
 Add:
 
@@ -74,7 +128,7 @@ Add:
 
 Runtime parsing remains a fallback.
 
-## Phase 4 — Reanimated
+## Phase 6 — Reanimated
 
 Implement:
 
@@ -88,20 +142,7 @@ Implement:
 
 Benchmark frame stability and React render counts.
 
-## Phase 5 — Native acceleration
-
-Only after profiling.
-
-Evaluate:
-
-- JSI
-- Nitro
-- C++
-- Fabric/ShadowTree
-
-Implement the smallest native path that produces measurable improvement.
-
-## Phase 6 — Native metrics/theme transitions
+## Phase 7 — Native metrics/theme transitions
 
 Implement:
 
@@ -114,7 +155,7 @@ Implement:
 
 Keep metrics in the backend/capability layer.
 
-## Phase 7 — Extension SDK
+## Phase 8 — Extension SDK
 
 Implement:
 
@@ -125,7 +166,7 @@ Implement:
 - custom frontend interface
 - custom backend interface
 
-## Phase 8 — Hardening
+## Phase 9 — Hardening
 
 Run:
 
@@ -138,7 +179,7 @@ Run:
 - monorepo tests
 - benchmark suite
 
-## Phase 9 — Flutter research
+## Phase 10 — Flutter research
 
 Only now evaluate the Flutter backend.
 

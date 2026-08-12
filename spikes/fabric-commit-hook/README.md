@@ -3,6 +3,12 @@
 A ~300 LOC C++ spike proving that Windforge can merge resolved className
 styles into React Native's own Fabric commits instead of racing them.
 
+> **Status**: reference implementation of the **piggyback commit mode** of
+> the native delivery protocol (`docs/specs/NATIVE_DELIVERY_PROTOCOL_SPEC.md`,
+> roadmap Phase 3). Not yet promoted to a package — the native delivery
+> phase wires it into the build (podspec/Gradle, module registration) and
+> connects it to the `fabric` backend of `@windforge/react-native`.
+
 ## The bet
 
 A styling engine that mutates the shadow tree from a side thread has a race

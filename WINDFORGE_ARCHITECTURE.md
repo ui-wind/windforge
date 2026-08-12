@@ -456,7 +456,17 @@ Theme
 
 # 12. Native layer
 
-The native layer is a first-class part of the native backend because Windforge targets React Native New Architecture only. It should still be introduced incrementally and justified by measurable value.
+The native layer is a first-class part of the native backend because Windforge targets React Native New Architecture only. It is introduced incrementally, and every increment must be justified by measurable value.
+
+### Decision note: build-time resolution + native delivery (2026-08)
+
+Native delivery is the primary path for dynamic style updates on native platforms (§9), and it is made cheap by a strict build-time/runtime split:
+
+- **Resolution happens at build time.** The compiler emits a `className → resolved style` map in the artifact. The native layer never resolves Tailwind and never holds a per-component resolver — this is also what keeps the native layer decoupled from RN internals.
+- **Condition observation stays in JS.** The provider observes `Appearance`/`Dimensions`; on change, JS diffs the affected unique classNames and pushes one update through the delivery protocol. Styled components do not re-render on condition changes when the native path is active.
+- **Delivery is owned by the native layer.** It owns the `className → style` registry, the `family → className` bindings, and the ShadowTree merge/commit strategy (commit modes in `docs/specs/RN_FABRIC_NATIVE_BACKEND_SPEC.md`; protocol in `docs/specs/NATIVE_DELIVERY_PROTOCOL_SPEC.md`).
+
+The JS baseline stays the default runtime, the fallback when the native module is unavailable, and the parity reference for the web backend.
 
 Possible responsibilities:
 
@@ -735,7 +745,10 @@ Automated benchmark thresholds in CI.
 
 # 22. Development phases
 
-## Phase 0 — Architecture
+`docs/IMPLEMENTATION_ROADMAP.md` is the source of truth for phase numbering.
+This section is a summary; when the two diverge, the roadmap wins.
+
+## Phase 0 — Architecture foundation ✅
 
 - monorepo
 - core interfaces
@@ -743,51 +756,64 @@ Automated benchmark thresholds in CI.
 - test harness
 - benchmark harness
 
-## Phase 1 — Tailwind compiler
+## Phase 1 — Tailwind core ✅
 
-- parser
-- utility resolver
+- Tailwind v4 toolchain reuse (oxide → lightningcss → Windforge IR)
 - static extraction
-- basic variants
-- theme
+- variants, dark mode, platform selectors, responsive rules
+- end-to-end runtime: registry + condition evaluation + styled components
 
-## Phase 2 — RN runtime
+## Phase 2 — Web backend
 
-- className transform
-- StyleSheet/native output
-- Metro plugin
-- Expo example
+- CSS lowering
+- deterministic generated classes
+- responsive CSS, pseudo states
+- SSR-safe output
 
-## Phase 3 — Reanimated
+## Phase 3 — Native delivery foundation
+
+- `StyleBackend` interface (`js-baseline` default, `fabric` opt-in)
+- JS↔native delivery protocol (see `docs/specs/NATIVE_DELIVERY_PROTOCOL_SPEC.md`)
+- piggyback commit mode: merge styles into React commits via
+  `UIManagerCommitHook` (proven by the commit-hook spike)
+
+## Phase 4 — Native direct commit
+
+- ShadowTreeSynchronizer — condition-only updates without React involvement
+- kill-criteria-gated; benchmark before any zero-re-render claim
+
+## Phase 5 — Dynamic runtime
+
+- conditional class expressions
+- runtime class lookup
+- caching
+- third-party prop mapping
+- diagnostics
+
+## Phase 6 — Reanimated
 
 - Animated.View
 - shared values
 - worklet-safe output
 - animation benchmarks
 
-## Phase 4 — Native acceleration
+## Phase 7 — Native metrics/theme transitions
 
-- JSI
-- Nitro adapter if beneficial
-- native cache
-- Fabric integration
+- safe area, font scale, pixel ratio, layout direction
+- native theme transitions
 
-## Phase 5 — Optimization
-
-- deduplication
-- compact IR
-- incremental compiler
-- cache persistence
-- memory optimization
-
-## Phase 6 — Extension SDK
+## Phase 8 — Extension SDK
 
 - custom utilities
 - custom variants
 - custom tokens
 - custom backends
 
-## Phase 7 — Flutter research
+## Phase 9 — Hardening
+
+- platform matrices, stress tests, benchmark suite
+
+## Phase 10 — Flutter research
 
 Only after RN architecture is stable.
 
