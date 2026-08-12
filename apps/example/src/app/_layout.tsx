@@ -3,6 +3,10 @@ import * as SplashScreen from 'expo-splash-screen';
 import { useColorScheme } from 'react-native';
 import { WindforgeProvider } from '@windforge/react-native';
 
+// Enables the fabric backend on native builds (no-op on web / Expo Go).
+// Must run before WindforgeProvider mounts.
+import '@/windforge-setup';
+
 // Registers the compiled Windforge artifact (built by compileWindforge in
 // metro.config.js) with the runtime.
 import 'windforge/generated';

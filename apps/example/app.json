@@ -8,7 +8,8 @@
     "scheme": "example",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/expo.icon",
+      "bundleIdentifier": "dev.windforge.example"
     },
     "android": {
       "adaptiveIcon": {

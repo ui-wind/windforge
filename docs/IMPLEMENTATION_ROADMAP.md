@@ -76,7 +76,7 @@ Requirements:
 - CSS variables
 - SSR-safe output
 
-## Phase 3 — Native delivery foundation
+## Phase 3 — Native delivery foundation ✅ (iOS)
 
 Goal: restructure the runtime around a `StyleBackend` interface and land the
 first native delivery path — the piggyback commit mode proven by the Fabric
@@ -84,20 +84,25 @@ commit-hook spike (`spikes/fabric-commit-hook/`, verdict GO).
 
 Implement:
 
-- `StyleBackend` interface with `js-baseline` default and `fabric` opt-in
-- JS↔native delivery protocol (`docs/specs/NATIVE_DELIVERY_PROTOCOL_SPEC.md`):
+- ✅ `StyleBackend` interface with `js-baseline` default and `fabric` opt-in
+- ✅ JS↔native delivery protocol (`docs/specs/NATIVE_DELIVERY_PROTOCOL_SPEC.md`):
   `registerStyles`, `link`, `suspend`, `unlink`, `updateStyles`,
   `getDiagnostics`
-- artifact sync: push the resolved `className → style` map to the native
+- ✅ artifact sync: push the resolved `className → style` map to the native
   registry
-- mount/unmount bindings (`link`/`unlink`) from styled components
-- condition ownership: JS observes `Appearance`/`Dimensions`, diffs unique
+- ✅ mount/unmount bindings (`link`/`unlink`) from styled components
+- ✅ condition ownership: JS observes `Appearance`/`Dimensions`, diffs unique
   classNames, pushes a single update per change — no React re-render of the
   styled tree
-- piggyback commit: merge pending styles into React commits via
-  `UIManagerCommitHook::shadowTreeWillCommit`
-- promote the spike C++ core into the package build (podspec/Gradle, module
-  registration, iOS first, then Android UIManager acquisition)
+- ✅ piggyback commit: merge pending styles into React commits via
+  `UIManagerCommitHook::shadowTreeWillCommit`; condition-only updates
+  (no React commit at all) push through the first-party
+  `UIManager::updateShadowTree(tagToProps)` API
+- ✅ build-time `dependencies` (className → condition ids) emitted in the
+  artifact and used as a diff prefilter by the fabric backend
+- ✅ promote the spike C++ core into `@windforge/native` (podspec, TurboModule
+  registration via `setSurfacePresenter:` injection, iOS first)
+- ⏭ Android UIManager acquisition — deferred
 
 Do NOT implement direct native commits yet — that is Phase 4.
 

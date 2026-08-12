@@ -10,15 +10,23 @@ commit-hook spike (`spikes/fabric-commit-hook/`).
 
 ## What the protocol carries
 
-- **Style data**: the build-time-resolved `className → resolved style` map
-  from the artifact. Values are platform-neutral style props (folly::dynamic
-  on the native side) — the protocol carries no Tailwind, no CSS, no IR.
-- **Bindings**: `tag → className` for each mounted styled component. The
-  native side resolves tags to `ShadowNodeFamily` and keys its registry by
-  family, never by raw node pointer (family identity survives React's
+**Key identity.** Every `className` in the protocol is a full className
+**string** — the whitespace-normalized version of what the component
+received (e.g. `flex-1 bg-white dark:bg-black`), never an individual
+utility class. `registerStyles`, `updateStyles` and `link` all agree on
+this key, which is what lets native match a binding against a style
+registry entry. JS resolves the classes in a string and pushes the merged
+style object; native stores merged props only.
+
+- **Style data**: the JS-resolved `className string → merged style` map.
+  Values are platform-neutral style props (folly::dynamic on the native
+  side) — the protocol carries no Tailwind, no CSS, no IR.
+- **Bindings**: `tag → className string` for each mounted styled component.
+  The native side resolves tags to `ShadowNodeFamily` and keys its registry
+  by family, never by raw node pointer (family identity survives React's
   immutable clones).
-- **Updates**: a diff of classNames whose resolved values changed after a
-  condition change (dark mode, rotation, breakpoint).
+- **Updates**: a diff of className strings whose merged resolved values
+  changed after a condition change (dark mode, rotation, breakpoint).
 
 Condition observation (Appearance/Dimensions subscriptions) lives in JS. The
 native side never subscribes to platform condition events directly.
@@ -26,12 +34,12 @@ native side never subscribes to platform condition events directly.
 ## JS→native calls
 
 ```text
-registerStyles(map)      className → resolved style map from the artifact
-link(tag, className)     bind a mounted component's tag to a className
+registerStyles(map)      className string → merged resolved style map
+link(tag, className)     bind a mounted component's tag to its className string
 suspend(tag)             keep the binding but stop applying it (e.g. while
                          an animation owns the props)
 unlink(tag)              remove the binding (unmount)
-updateStyles(diffMap)    replace resolved values for the given classNames
+updateStyles(diffMap)    replace merged resolved values for the given className strings
 getDiagnostics()         counters: commits observed/mutated, binding count
 ```
 
@@ -39,12 +47,22 @@ getDiagnostics()         counters: commits observed/mutated, binding count
 unmounted is dropped silently (the committed tree is the source of truth for
 liveness — see threading below).
 
+Style values cross the boundary in **native-ready format**: the same shape
+React's prop pipeline produces, because the native side feeds them to
+`ComponentDescriptor::cloneProps` as raw props and the C++ props parser has
+no string-color support (raw CSS strings silently decode to transparent).
+Concretely, the JS side runs `processColor` on color properties
+(backgroundColor, color, border*Color, …) before `registerStyles`/
+`updateStyles`; numeric and string non-color values (16, "0%") pass through
+unchanged. The React style-prop path keeps raw strings — RN's own pipeline
+processes them.
+
 ## Native-side state
 
 ```text
 StyleRegistry
-├── styles:      className → { props: dynamic, generation: uint64 }
-└── bindings:    family → { className, appliedGeneration, suspended }
+├── styles:      className string → { props: dynamic, generation: uint64 }
+└── bindings:    family → { className string, appliedGeneration, suspended }
 ```
 
 - `updateStyles` bumps the generation of every touched className.
@@ -72,9 +90,9 @@ Rules:
 - If the pending families are gone in the very commit being observed, return
   the original root untouched.
 
-A condition change in this mode: JS diffs unique classNames → one
-`updateStyles` call → the change lands on the next React commit. The styled
-tree does not re-render, but delivery still rides on a React commit.
+A condition change in this mode: JS diffs unique linked className strings →
+one `updateStyles` call → the change lands on the next React commit. The
+styled tree does not re-render, but delivery still rides on a React commit.
 
 ### 2. Direct native commit (Phase 4)
 
