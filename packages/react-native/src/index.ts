@@ -17,6 +17,16 @@ export {
   type ViewProps,
 } from './components.js';
 export { evaluateCondition } from './conditions.js';
+export { __resetBackend, getBackend, selectBackend } from './backends/index.js';
+export {
+  setFabricNativeAdapter,
+  type NativeStyleAdapter,
+} from './backends/fabric.js';
+export type {
+  StyleBackend,
+  StyleBackendName,
+  StyleHandle,
+} from './backends/types.js';
 export { WindforgeProvider, useWindforge, type WindforgeProviderProps } from './provider.js';
 export { __resetRegistry, getArtifacts, registerArtifact } from './registry.js';
 export {

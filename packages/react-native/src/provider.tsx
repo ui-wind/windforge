@@ -1,51 +1,86 @@
 /**
- * WindforgeProvider: supplies the condition state (color scheme, platform,
- * window dimensions) to styled components and re-renders on change.
+ * Condition state store + WindforgeProvider.
+ *
+ * Conditions (color scheme, dimensions) are observed once, in the provider,
+ * and published through a subscription store:
+ *
+ * - js-baseline components subscribe (via `useConditionState`) and
+ *   re-render on change — the traditional behavior.
+ * - fabric components do not subscribe; the provider forwards changes to
+ *   `backend.onConditionsChanged`, and native delivery lands the update
+ *   without re-rendering the styled tree.
+ *
+ * The provider itself never re-renders on condition changes, so children
+ * that do not subscribe stay untouched.
  */
 import {
+  Fragment,
   createElement,
-  createContext,
-  useContext,
   useEffect,
-  useMemo,
-  useState,
+  useLayoutEffect,
+  useSyncExternalStore,
   type ReactNode,
 } from 'react';
-import {
-  Appearance,
-  Dimensions,
-  Platform,
-  useWindowDimensions,
-} from 'react-native';
+import { Appearance, Dimensions, Platform } from 'react-native';
+import { getBackend } from './backends/index.js';
 import type { ConditionState } from './state.js';
 
 export type WindforgeContextValue = {
   state: ConditionState;
 };
 
-const WindforgeContext = createContext<WindforgeContextValue | null>(null);
-
-export function useWindforge(): WindforgeContextValue {
-  const value = useContext(WindforgeContext);
-  if (!value) {
-    // Sensible defaults outside a provider keep unit tests and simple apps
-    // working; a wrapped app should still mount the provider for live
-    // color-scheme updates.
-    return {
-      state: {
-        colorScheme: Appearance.getColorScheme() === 'dark' ? 'dark' : 'light',
-        platform: platformOf(Platform.OS),
-        windowWidth: Dimensions.get('window').width,
-        windowHeight: Dimensions.get('window').height,
-      },
-    };
-  }
-  return value;
-}
-
 function platformOf(os: string): ConditionState['platform'] {
   if (os === 'ios' || os === 'android' || os === 'web') return os;
   return 'android';
+}
+
+function readConditions(): ConditionState {
+  return {
+    colorScheme: Appearance.getColorScheme() === 'dark' ? 'dark' : 'light',
+    platform: platformOf(Platform.OS),
+    windowWidth: Dimensions.get('window').width,
+    windowHeight: Dimensions.get('window').height,
+  };
+}
+
+let conditions: ConditionState = readConditions();
+const subscribers = new Set<() => void>();
+
+export function getConditions(): ConditionState {
+  return conditions;
+}
+
+export function subscribeConditions(listener: () => void): () => void {
+  subscribers.add(listener);
+  return () => {
+    subscribers.delete(listener);
+  };
+}
+
+function setConditions(next: ConditionState): void {
+  const prev = conditions;
+  conditions = next;
+  getBackend().onConditionsChanged?.(next, prev);
+  for (const listener of [...subscribers]) listener();
+}
+
+const noopSubscribe = () => () => {};
+
+/**
+ * Current condition state. Pass `subscribe = false` to read the snapshot
+ * without re-rendering on change (fabric backend components).
+ */
+export function useConditionState(subscribe = true): ConditionState {
+  return useSyncExternalStore(
+    subscribe ? subscribeConditions : noopSubscribe,
+    getConditions,
+    getConditions,
+  );
+}
+
+/** Live condition state, shaped like the historical context value. */
+export function useWindforge(): WindforgeContextValue {
+  return { state: useConditionState() };
 }
 
 export type WindforgeProviderProps = {
@@ -55,33 +90,49 @@ export type WindforgeProviderProps = {
 };
 
 export function WindforgeProvider(props: WindforgeProviderProps): ReactNode {
-  const dimensions = useWindowDimensions();
-  const [scheme, setScheme] = useState<'light' | 'dark'>(
-    props.colorScheme ?? (Appearance.getColorScheme() === 'dark' ? 'dark' : 'light'),
-  );
+  const { colorScheme } = props;
+
+  // The override participates in the first paint; without a layout effect
+  // subscribers would render one frame with the system scheme.
+  useLayoutEffect(() => {
+    if (!colorScheme) return undefined;
+    if (conditions.colorScheme !== colorScheme) {
+      setConditions({ ...conditions, colorScheme });
+    }
+    return undefined;
+  }, [colorScheme]);
 
   useEffect(() => {
-    if (props.colorScheme) {
-      setScheme(props.colorScheme);
+    if (colorScheme) {
+      // System changes are ignored while overridden; the layout effect above
+      // keeps the store in sync if the prop itself changes.
       return undefined;
     }
-    const subscription = Appearance.addChangeListener(({ colorScheme }) => {
-      setScheme(colorScheme === 'dark' ? 'dark' : 'light');
-    });
-    return () => subscription.remove();
-  }, [props.colorScheme]);
-
-  const value = useMemo<WindforgeContextValue>(
-    () => ({
-      state: {
-        colorScheme: scheme,
-        platform: platformOf(Platform.OS),
-        windowWidth: dimensions.width,
-        windowHeight: dimensions.height,
+    const appearanceSubscription = Appearance.addChangeListener(
+      ({ colorScheme: scheme }) => {
+        const next = scheme === 'dark' ? 'dark' : 'light';
+        if (conditions.colorScheme !== next) {
+          setConditions({ ...conditions, colorScheme: next });
+        }
       },
-    }),
-    [scheme, dimensions.width, dimensions.height],
-  );
+    );
+    const dimensionsSubscription = Dimensions.addEventListener('change', ({ window }) => {
+      if (
+        conditions.windowWidth !== window.width ||
+        conditions.windowHeight !== window.height
+      ) {
+        setConditions({
+          ...conditions,
+          windowWidth: window.width,
+          windowHeight: window.height,
+        });
+      }
+    });
+    return () => {
+      appearanceSubscription.remove();
+      dimensionsSubscription.remove();
+    };
+  }, [colorScheme]);
 
-  return createElement(WindforgeContext.Provider, { value }, props.children);
+  return createElement(Fragment, null, props.children);
 }
