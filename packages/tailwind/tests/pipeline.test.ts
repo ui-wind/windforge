@@ -106,6 +106,19 @@ describe('generate (end-to-end pipeline)', () => {
     const ios = artifact.styles['ios:bg-white'];
     expect(ios.variants?.[0]?.conditionIds).toEqual(['platform:ios']);
 
+    // ---- dependencies (fabric prefilter data) ------------------------------
+    // Base-only classes are condition-independent; variant classes list the
+    // union of their variants' conditionIds.
+    expect(artifact.dependencies['p-4']).toEqual([]);
+    expect(artifact.dependencies['bg-zinc-950']).toEqual([]);
+    expect(artifact.dependencies['dark:text-zinc-300']).toEqual(['color-scheme:dark']);
+    expect(artifact.dependencies['sm:p-2']).toEqual(['media-width:>=:640']);
+    expect(artifact.dependencies['ios:bg-white']).toEqual(['platform:ios']);
+    // Every emitted class carries an entry, keyed 1:1 with styles.
+    expect(Object.keys(artifact.dependencies).sort()).toEqual(
+      Object.keys(artifact.styles).sort(),
+    );
+
     // ---- diagnostics -------------------------------------------------------
     expect(diagnostics.some((d) => d.code === 'WF1004')).toBe(true); // hover:
     // Color vars must resolve cleanly — no spurious "could not evaluate" noise.
@@ -159,5 +172,21 @@ describe('buildArtifact (direct CSS input)', () => {
     `;
     const { diagnostics } = buildArtifact(css, 1);
     expect(diagnostics.some((d) => d.code === 'WF1003')).toBe(true);
+  });
+
+  it('emits dependencies as the sorted union of variant condition ids', () => {
+    const css = `
+      .card { padding: 4px; }
+      @media (min-width: 640px) { .card { padding: 8px; } }
+      @media (max-width: 320px) { .card { padding: 2px; } }
+      @media (min-width: 640px) { .card { margin: 8px; } }
+      .plain { padding: 4px; }
+    `;
+    const { artifact } = buildArtifact(css, 1);
+    expect(artifact.dependencies['card']).toEqual([
+      'media-width:<=:320',
+      'media-width:>=:640',
+    ]);
+    expect(artifact.dependencies['plain']).toEqual([]);
   });
 });

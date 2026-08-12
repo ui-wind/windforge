@@ -1,0 +1,40 @@
+{
+  "name": "@windforge/native",
+  "version": "0.0.1",
+  "description": "Windforge native delivery — C++/Fabric bridge that merges resolved styles into ShadowTree commits without React re-renders",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "ios",
+    "cpp",
+    "WindforgeNative.podspec"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "clean": "rm -rf dist *.tsbuildinfo"
+  },
+  "dependencies": {
+    "@windforge/react-native": "workspace:*"
+  },
+  "peerDependencies": {
+    "react-native": ">=0.86"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "react": "19.2.3",
+    "react-native": "0.86.2",
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
+  }
+}

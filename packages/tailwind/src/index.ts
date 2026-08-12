@@ -62,6 +62,7 @@ function emptyArtifact(): RuntimeArtifact {
     hash: '00000000',
     styles: {},
     conditions: [],
+    dependencies: {},
   };
 }
 

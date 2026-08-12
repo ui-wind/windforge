@@ -34,6 +34,7 @@ export {
   resolveClassNames,
   toReactNativeValue,
 } from './resolve.js';
+export type { ReactNativeStyle } from './resolve.js';
 export { stateSignature, type ConditionState } from './state.js';
 export {
   isCompatibleArtifact,

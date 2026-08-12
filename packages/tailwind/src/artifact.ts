@@ -35,6 +35,13 @@ export type RuntimeArtifact = {
   hash: string;
   styles: Record<string, ClassEntry>;
   conditions: ConditionIR[];
+  /**
+   * className → condition ids that can change its resolved style (union of
+   * its variants' conditionIds; base-only classes map to []). Derived at
+   * build time so the fabric backend can prefilter which classes to diff
+   * when a condition flips.
+   */
+  dependencies: Record<string, string[]>;
 };
 
 export type BuildResult = {
@@ -90,6 +97,7 @@ export function buildArtifact(css: string, irVersion: number): BuildResult {
 
   const conditionMap = new Map<string, ConditionIR>();
   const styles: Record<string, ClassEntry> = {};
+  const dependencies: Record<string, string[]> = {};
 
   for (const [className, rules] of [...collected.classes.entries()].sort(
     ([a], [b]) => (a < b ? -1 : a > b ? 1 : 0),
@@ -126,6 +134,9 @@ export function buildArtifact(css: string, irVersion: number): BuildResult {
       entry.variants = [...variantGroups.values()];
     }
     styles[className] = entry;
+    dependencies[className] = entry.variants
+      ? [...new Set(entry.variants.flatMap((variant) => variant.conditionIds))].sort()
+      : [];
   }
 
   const conditions = [...conditionMap.values()].sort((a, b) =>
@@ -140,6 +151,7 @@ export function buildArtifact(css: string, irVersion: number): BuildResult {
       hash,
       styles,
       conditions,
+      dependencies,
     },
     diagnostics,
   };

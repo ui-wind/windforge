@@ -29,6 +29,9 @@ importers:
       '@windforge/metro':
         specifier: workspace:*
         version: link:../../packages/metro
+      '@windforge/native':
+        specifier: workspace:*
+        version: link:../../packages/native
       '@windforge/react-native':
         specifier: workspace:*
         version: link:../../packages/react-native
@@ -146,6 +149,28 @@ importers:
       '@types/node':
         specifier: ^26.2.0
         version: 26.2.0
+      typescript:
+        specifier: ^5.9.2
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/node@26.2.0)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.50.0)(yaml@2.9.0)
+
+  packages/native:
+    dependencies:
+      '@windforge/react-native':
+        specifier: workspace:*
+        version: link:../react-native
+    devDependencies:
+      '@types/node':
+        specifier: ^26.2.0
+        version: 26.2.0
+      react:
+        specifier: 19.2.3
+        version: 19.2.3
+      react-native:
+        specifier: 0.86.2
+        version: 0.86.2(@babel/core@7.29.7)(@react-native/metro-config@0.86.2(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.3)
       typescript:
         specifier: ^5.9.2
         version: 5.9.3
@@ -4990,7 +5015,9 @@ snapshots:
       metro-runtime: 0.84.4
     transitivePeerDependencies:
       - '@babel/core'
+      - bufferutil
       - supports-color
+      - utf-8-validate
 
   '@react-native/normalize-colors@0.74.89': {}
 

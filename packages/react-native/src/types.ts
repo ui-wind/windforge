@@ -25,6 +25,12 @@ export type RuntimeArtifact = {
   hash: string;
   styles: Record<string, ClassEntry>;
   conditions: ConditionIR[];
+  /**
+   * className → condition ids that can change its resolved style. Optional:
+   * older artifacts (pre-dependency builds) omit it, and the fabric backend
+   * then diffs every known class as before.
+   */
+  dependencies?: Record<string, string[]>;
 };
 
 /** Artifact format versions this runtime accepts. */

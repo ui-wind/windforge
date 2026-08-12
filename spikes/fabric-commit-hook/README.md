@@ -5,9 +5,11 @@ styles into React Native's own Fabric commits instead of racing them.
 
 > **Status**: reference implementation of the **piggyback commit mode** of
 > the native delivery protocol (`docs/specs/NATIVE_DELIVERY_PROTOCOL_SPEC.md`,
-> roadmap Phase 3). Not yet promoted to a package — the native delivery
-> phase wires it into the build (podspec/Gradle, module registration) and
-> connects it to the `fabric` backend of `@windforge/react-native`.
+> roadmap Phase 3). **Promoted** — the C++ core now lives in
+> `packages/native` (`@windforge/native`, iOS) as `StyleRegistry` /
+> `StyleCommitHook`, wrapped by the `StyleStore` orchestrator and the
+> `WindforgeStyle` TurboModule. This directory stays as-is for historical
+> reference and is not built or maintained.
 
 ## The bet
 
