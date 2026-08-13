@@ -138,6 +138,16 @@ Potential metrics:
 
 Metrics should be exposed as stable backend capabilities.
 
+Status (2026-08-13, Phase 7): implemented as a JS capability layer in
+`@windforge/react-native` — `getMetrics()`/`useMetrics()` merge the condition
+store (colorScheme/platform/dimensions/fontScale/pixelRatio/layoutDirection)
+with a separate insets store fed by the optional
+`@windforge/react-native/safe-area` entrypoint. No protocol change was needed:
+per NATIVE_DELIVERY_PROTOCOL_SPEC the native side never subscribes to platform
+events on its own, and JS already observes conditions, so metrics ride the
+existing stores. A native `getMetrics()` TurboModule method remains
+design-only; add it only if profiling shows the JS path is hot (Rule 4).
+
 ## Compatibility
 
 Native code must maintain explicit version adapters for React Native changes.

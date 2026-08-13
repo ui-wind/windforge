@@ -34,7 +34,7 @@ Legend:
 | rem | P0 | ✓ | ✓ | Platform-aware conversion |
 | calc() | P1 | capability | ✓ | Native unit restrictions |
 | color functions | P1 | capability | ✓ | Native parser required |
-| safe-area env() | P1 | ✓ | ✓ | Native metrics backend |
+| safe-area env() | P1 | ✓ | ✓ | Phase 7: insets metrics API (`getInsets`/`useInsets`, optional `@windforge/react-native/safe-area` entrypoint); `env()` CSS lowering = follow-up |
 
 ## React Native runtime
 
@@ -50,7 +50,7 @@ Legend:
 | Native style cache | P1 | C++/native if benchmarked |
 | JSI backend | P1 | Narrow interface |
 | Nitro adapter | P1 | Optional implementation backend |
-| Native metrics | P1 | safe area/font scale/pixel ratio |
+| Native metrics | P1 | Phase 7: JS capability layer — `getMetrics`/`useMetrics` (colorScheme/platform/window/fontScale/pixelRatio/layoutDirection/insets), `rtl:`/`ltr:` variants; native `getMetrics()` stays design-only |
 | Suspended subtree handling | P1 | Must be tested |
 
 ## Reanimated
@@ -67,7 +67,7 @@ Legend:
 | auto Animated component upgrade | P1 | Common RN primitives |
 | SharedValue integration | P1 | UI-thread path (Phase 6: useAnimatedConditionState mirror; deep binding into style resolution deferred) |
 | worklet-safe style representation | P0 | No React render per frame (Phase 6: measured 1 render per toggle, 0 per frame; SV snapshot vs. reanimated #5430 freeze) |
-| animated theme transition | P1 | Native/UI thread target |
+| animated theme transition | P1 | Phase 7: `useAnimatedThemeProgress` SharedValue 0↔1 + `interpolateColor` on the UI thread (render counter 1 during flips); auto-animate of `dark:` variants = follow-up |
 
 ## Web
 

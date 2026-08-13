@@ -319,18 +319,102 @@ These are the Phase 6 decision records (Rule 13).
 Demo: `apps/example/src/app/animation.tsx` (Animation tab). Verification
 runbook: `docs/guides/NATIVE_SETUP_IOS.md`.
 
-## Phase 7 — Native metrics/theme transitions
+## Phase 7 — Native metrics/theme transitions ✅
 
-Implement:
+Goal: surface platform metrics (safe area, font scale, pixel ratio, layout
+direction) as stable backend/capability-layer APIs, add `rtl:`/`ltr:` variants,
+and ship a native theme-transition progress hook. Scope agreed up front:
+progress hook + demo first; auto-animating `dark:` variant flips is a
+follow-up.
 
-- safe area
-- font scale
-- pixel ratio
-- platform metrics
-- layout direction
-- native theme transitions
+Done:
 
-Keep metrics in the backend/capability layer.
+- ✅ `ConditionState` extended with `fontScale`, `pixelRatio`,
+  `layoutDirection`; `stateSignature()` (the cache key of every style cache)
+  covers the new fields, so a metric change can never stale-hit a cached
+  style. Provider seeds them from `PixelRatio.getFontScale()`,
+  `PixelRatio.get()` and `I18nManager.getConstants().isRTL`; the Dimensions
+  change handler re-reads font scale (Android fires it on accessibility
+  changes); layout direction is read once at boot.
+- ✅ Metrics capability layer (`packages/react-native/src/metrics.ts`):
+  `getMetrics()`/`useMetrics()` merge conditions + insets; insets live in
+  their own store (`getInsets`/`subscribeInsets`/`useInsets`) because they are
+  a read-only metric, not a variant driver. `getMetrics()` memoizes its
+  snapshot — `useSyncExternalStore` requires a referentially stable
+  `getSnapshot`, rebuilt only when the underlying store references change
+  (regression-tested).
+- ✅ Optional safe-area entrypoint `@windforge/react-native/safe-area`
+  (subpath export, `react-native-safe-area-context` as optional peer):
+  `WindforgeSafeAreaProvider` mounts the bridge that publishes
+  `useSafeAreaInsets()` into the insets store. Apps that never mount it pay
+  nothing.
+- ✅ `LayoutDirectionConditionIR` in `@windforge/ir` (platform-neutral,
+  Rule 2) + Tailwind convention `@custom-variant rtl (@media
+  (layout-direction: rtl))` (same `@media` feature pattern as `platform:`);
+  `evaluateCondition` gained the `layout-direction` case, so the fabric
+  backend's dependency-diff picks the variants up with no extra wiring.
+- ✅ `useAnimatedThemeProgress()` in `@windforge/reanimated`: SharedValue
+  0 (light) ↔ 1 (dark), `withTiming` on every color-scheme flip (default
+  400ms), reduced-motion → duration 0 snap; consumers interpolate colors in
+  `useAnimatedStyle` (`interpolateColor`), so frames animate on the UI thread
+  with zero React renders.
+- ✅ Example Metrics screen (`apps/example/src/app/metrics.tsx`, web
+  placeholder, Metrics tab): live `useMetrics()` panel, `rtl:`/`ltr:` demo
+  boxes, theme-transition crossfade box with a render counter, diagnostics
+  row; `_layout.tsx` wraps the app in `WindforgeSafeAreaProvider`.
+
+Measured on the iOS simulator (iPhone 17 Pro, dev client, Metro dev bundle),
+Rule 11:
+
+| measurement | result |
+| --- | --- |
+| `useMetrics()` panel | colorScheme light/dark (live flip), platform ios, window 402x874, fontScale 1, pixelRatio 3, layoutDirection ltr, insets t:62 r:0 b:34 l:0 |
+| `ltr:` variant resolution | pixel-exact artifact values on screen: box background `#615fff` (indigo-500), direction-aware text `#a3b3ff` (indigo-300); `rtl:` correctly inactive in ltr |
+| theme flip (`simctl ui appearance dark`) | crossfade box settles at `#18181b`; its React render counter stays at 1 — 0 renders while frames animate |
+| native delivery across flips | adapter `available: true`; appearance reports show styleUpdates 55→74 and directCommits 1 (cumulative counters include stress-screen churn between reports) |
+| regression | Home/Explore/Animation/Stress clean in dark mode; Animation FPS still 60 |
+
+Scope notes:
+
+- Auto-animating `dark:` variant flips on styled components = follow-up (the
+  progress hook shipped first, per the agreed scope).
+- `env(safe-area-inset-*)` CSS lowering / `pt-safe`-style utilities =
+  follow-up; this phase ships the insets metrics API only.
+- No font-scale/pixel-ratio variants (Tailwind has no equivalent); the
+  extension point is ready — `media.ts` rejects unknown features with a
+  diagnostic.
+- Android not exercised this phase (iOS-only verification, same as
+  Phases 4–6); web reads are guarded (missing `I18nManager` constants →
+  `ltr`/`1`).
+
+### Decisions
+
+These are the Phase 7 decision records (Rule 13).
+
+- **Metrics live in the JS capability layer; no new native code (Rule 4).**
+  All metrics come from RN JS APIs (`PixelRatio`, `Dimensions`,
+  `I18nManager`) plus the optional safe-area-context bridge — no new
+  TurboModule method. The native `getMetrics()` in
+  `docs/specs/RN_FABRIC_NATIVE_BACKEND_SPEC.md` stays design-only; revisit
+  only if profiling ever shows the JS path is hot.
+- **Layout direction is read once at boot.** `I18nManager` direction changes
+  require an app restart on both platforms, so observing it once is complete;
+  no subscription exists.
+- **Insets are a separate store + optional entrypoint, not a
+  `ConditionState` field.** Nothing in the variant system keys off insets, so
+  putting them in `stateSignature` would invalidate every style cache on
+  rotation for no benefit; the optional subpath keeps
+  `react-native-safe-area-context` out of apps that don't want it.
+- **Font scale is surfaced, not applied.** RN `Text` already scales font
+  sizes with the system font scale; Windforge exposes the metric (and keys
+  caches on it) but does not double-scale rem.
+- **`useAnimatedThemeProgress` mirrors unistyles' `useAnimatedTheme` pattern**
+  (SharedValue progress 0..1 animated on theme flip; MIT prior art, pattern
+  referenced, nothing copied). Auto theme crossfade of `dark:` variants is
+  the follow-up.
+
+Demo: `apps/example/src/app/metrics.tsx` (Metrics tab). Verification runbook:
+`docs/guides/NATIVE_SETUP_IOS.md`.
 
 ## Phase 8 — Extension SDK
 

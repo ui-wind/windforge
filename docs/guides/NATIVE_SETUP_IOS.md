@@ -211,6 +211,46 @@ Note: on this machine the installed dev build predates the
 listapps booted` shows the installed id (`com.vule94.example`), and
 `simctl launch` must target that id, not the one in `app.json`.
 
+## Metrics screen verification (Phase 7)
+
+The Metrics tab (`apps/example/src/app/metrics.tsx`) surfaces the platform-
+metrics capability layer, the `rtl:`/`ltr:` variants and the animated theme
+progress. The simulator deep link is `example://metrics`:
+
+```bash
+xcrun simctl openurl booted "example://metrics"
+```
+
+Check the following:
+
+- **metrics panel** — `useMetrics()` values update live. On iPhone 17 Pro
+  expect insets `t:62 r:0 b:34 l:0` (notch + home indicator), pixelRatio 3,
+  fontScale 1, layoutDirection ltr, window 402x874; `colorScheme` flips with
+  the system appearance.
+- **rtl:/ltr: boxes** — in an ltr build the first box renders indigo
+  (`ltr:bg-indigo-500` overrides the base `bg-accent`) and the second caption
+  renders indigo-300; an RTL build swaps both to the emerald variants.
+- **theme transition box** — flip with
+  `xcrun simctl ui booted appearance dark`: the box crossfades light ↔ dark
+  over 400ms (`useAnimatedThemeProgress` + `interpolateColor` on the UI
+  thread). The caption's React render counter must stay at **1** across flips
+  (Rule 6).
+- **Metro log** — each flip logs `[windforge] appearance` with the native
+  delivery counters (`available: true`, `styleUpdates` climbing) when the dev
+  client includes the WindforgeStyle pod.
+
+Reference measurements (iPhone 17 Pro simulator, dev client, 2026-08-13):
+panel values as above; ltr box pixel-exact at the artifact values (`#615fff`
+background, `#a3b3ff` text); crossfade settles at `#18181b` with the render
+counter still 1; appearance reports show `styleUpdates` 55→74 and
+`directCommits` 1 across the session's flips. These numbers back the Phase 7
+claims in `docs/IMPLEMENTATION_ROADMAP.md`.
+
+Note: `@windforge/metro` compiles the artifact once at Metro startup (no file
+watcher). After editing `global.css` or adding class literals, restart Metro
+— WF2001 warnings for classes that *should* exist in the artifact are the
+stale-artifact symptom.
+
 ## Troubleshooting
 
 - **"WindforgeStyle TurboModule not found" warning** — the app is running

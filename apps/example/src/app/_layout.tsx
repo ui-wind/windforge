@@ -2,6 +2,7 @@ import { DarkTheme, DefaultTheme, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useColorScheme } from 'react-native';
 import { WindforgeProvider } from '@windforge/react-native';
+import { WindforgeSafeAreaProvider } from '@windforge/react-native/safe-area';
 
 // Enables the fabric backend on native builds (no-op on web / Expo Go).
 // Must run before WindforgeProvider mounts.
@@ -20,10 +21,12 @@ export default function TabLayout() {
   const colorScheme = useColorScheme();
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <WindforgeProvider>
-        <AnimatedSplashOverlay />
-        <AppTabs />
-      </WindforgeProvider>
+      <WindforgeSafeAreaProvider>
+        <WindforgeProvider>
+          <AnimatedSplashOverlay />
+          <AppTabs />
+        </WindforgeProvider>
+      </WindforgeSafeAreaProvider>
     </ThemeProvider>
   );
 }

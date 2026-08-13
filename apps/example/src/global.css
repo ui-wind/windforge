@@ -15,3 +15,5 @@
 }
 
 @custom-variant ios (@media (platform: ios));
+@custom-variant rtl (@media (layout-direction: rtl));
+@custom-variant ltr (@media (layout-direction: ltr));

@@ -108,6 +108,15 @@ Support target states:
 - layout change
 - theme transition
 
+Theme transition status (Phase 7): shipped as
+`useAnimatedThemeProgress()` in `@windforge/reanimated` — a SharedValue
+progress 0 (light) ↔ 1 (dark) animated with `withTiming` on every color-scheme
+flip (default 400ms, duration 0 under reduced motion), consumed via
+`interpolateColor` inside `useAnimatedStyle` so frames run on the UI thread
+with zero React renders (verified on the Metrics screen: render counter stays
+1 across flips). Auto-animating `dark:` variant flips on styled components
+remains the follow-up for this lifecycle state.
+
 ## Testing
 
 Every animation feature needs:

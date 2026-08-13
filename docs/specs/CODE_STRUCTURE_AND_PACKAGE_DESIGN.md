@@ -176,6 +176,12 @@ interface NativeStyleRuntime {
 
 The implementation may use C++, JSI or Nitro internally.
 
+Note (Phase 7): a JS-side capability layer now exists —
+`getMetrics()`/`useMetrics()` in `@windforge/react-native` (conditions +
+optional insets store). The `getMetrics()` native method above stays
+design-only until profiling demands it; the JS layer satisfies the metrics
+capability without a protocol change.
+
 ## Reanimated boundary
 
 ```ts
