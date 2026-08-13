@@ -1,180 +1,180 @@
-import { Image } from 'expo-image';
-import { SymbolView } from 'expo-symbols';
-import { Platform, Pressable, ScrollView, StyleSheet } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+/**
+ * Dynamic screen — Phase 5 dynamic-runtime demo (docs/IMPLEMENTATION_ROADMAP.md).
+ *
+ * Build-time resolution stays primary (Home tab). This screen exercises the
+ * dynamic surface that build-time extraction cannot reach:
+ *  - ternary / cx() conditional class expressions (string literals — picked up
+ *    at build time, resolved from the artifact at runtime);
+ *  - a template-literal stepper `p-${n}` whose multipliers (5/7/9) never appear
+ *    as literals — resolved by the controlled fallback parser (WF2002);
+ *  - styled() on a third-party-shaped component and useWindforgeStyle() feeding
+ *    a plain RN ScrollView's contentContainerStyle (prop mapping);
+ *  - a live diagnostics panel showing fallbackParses climb and an intentionally
+ *    unknown token (`rotate-45`, WF2001).
+ */
+import { useEffect, useState, type ReactNode } from 'react';
+import {
+  ScrollView,
+  View as RNView,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import {
+  Pressable,
+  Text,
+  View,
+  cx,
+  getRuntimeDiagnostics,
+  styled,
+  useWindforgeStyle,
+} from '@windforge/react-native';
 
-import { ExternalLink } from '@/components/external-link';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Collapsible } from '@/components/ui/collapsible';
-import { WebBadge } from '@/components/web-badge';
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
-import { useTheme } from '@/hooks/use-theme';
+// A third-party-shaped component: accepts a style prop but no className.
+function Badge({ style, children }: { style?: StyleProp<ViewStyle>; children?: ReactNode }) {
+  return <RNView style={style}>{children}</RNView>;
+}
+// styled() adds className support via the default className→style mapping.
+const StyledBadge = styled<{ style?: StyleProp<ViewStyle>; children?: ReactNode }>(Badge);
 
-export default function TabTwoScreen() {
-  const safeAreaInsets = useSafeAreaInsets();
-  const insets = {
-    ...safeAreaInsets,
-    bottom: safeAreaInsets.bottom + BottomTabInset + Spacing.three,
-  };
-  const theme = useTheme();
+const STEPS = [5, 7, 9] as const;
 
-  const contentPlatformStyle = Platform.select({
-    android: {
-      paddingTop: insets.top,
-      paddingLeft: insets.left,
-      paddingRight: insets.right,
-      paddingBottom: insets.bottom,
-    },
-    web: {
-      paddingTop: Spacing.six,
-      paddingBottom: Spacing.four,
-    },
-  });
+export default function DynamicScreen() {
+  const [active, setActive] = useState(false);
+  const [stepIndex, setStepIndex] = useState(0);
+  const [diagnostics, setDiagnostics] = useState('—');
+
+  const n = STEPS[stepIndex % STEPS.length];
+  // `p-${n}` (n ∈ 5/7/9) never appears as a literal in source, so the
+  // artifact has no entry — the fallback parser resolves it (n × 4 points).
+  const stepperClass = `p-${n}`;
+
+  // Plain RN component + hook: useWindforgeStyle resolves a className string
+  // to a style object. It feeds both this screen's main ScrollView and the
+  // horizontal one's contentContainerStyle (a non-linkable secondary surface).
+  const mainStyle = useWindforgeStyle('flex-1 p-6');
+  const contentStyle = useWindforgeStyle('gap-3 p-3');
+
+  useEffect(() => {
+    const refresh = () => {
+      const d = getRuntimeDiagnostics();
+      setDiagnostics(
+        JSON.stringify(
+          {
+            resolves: d.resolves,
+            cacheHits: d.cacheHits,
+            cacheMisses: d.cacheMisses,
+            fallbackParses: d.fallbackParses,
+            fallbackMisses: d.fallbackMisses,
+            unknownTokens: d.unknownTokens,
+          },
+          null,
+          2,
+        ),
+      );
+    };
+    refresh();
+    const timer = setInterval(refresh, 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   return (
-    <ScrollView
-      style={[styles.scrollView, { backgroundColor: theme.background }]}
-      contentInset={insets}
-      contentContainerStyle={[styles.contentContainer, contentPlatformStyle]}>
-      <ThemedView style={styles.container}>
-        <ThemedView style={styles.titleContainer}>
-          <ThemedText type="subtitle">Explore</ThemedText>
-          <ThemedText style={styles.centerText} themeColor="textSecondary">
-            This starter app includes example{'\n'}code to help you get started.
-          </ThemedText>
+    <View className="flex-1 bg-zinc-950 dark:bg-zinc-900">
+      <SafeAreaView style={{ flex: 1 }}>
+        <ScrollView style={mainStyle}>
+          <Text className="text-2xl font-bold text-zinc-100 dark:text-zinc-300">Dynamic</Text>
+          <Text className="mt-1 text-sm text-zinc-400 dark:text-zinc-500">
+            Conditional classes, runtime lookup, and the controlled fallback parser.
+          </Text>
 
-          <ExternalLink href="https://docs.expo.dev" asChild>
-            <Pressable style={({ pressed }) => pressed && styles.pressed}>
-              <ThemedView type="backgroundElement" style={styles.linkButton}>
-                <ThemedText type="link">Expo documentation</ThemedText>
-                <SymbolView
-                  tintColor={theme.text}
-                  name={{ ios: 'arrow.up.right.square', android: 'link', web: 'link' }}
-                  size={12}
-                />
-              </ThemedView>
-            </Pressable>
-          </ExternalLink>
-        </ThemedView>
+          {/* Ternary: both branches are string literals, so the build resolves
+              them into the artifact; runtime just selects one. */}
+          <Pressable
+            className={cx('mt-4 rounded-lg', active ? 'bg-accent' : 'bg-zinc-800')}
+            onPress={() => setActive((a) => !a)}>
+            <Text className="p-4 text-center text-sm font-semibold text-white">
+              {active ? 'active → bg-accent' : 'idle → bg-zinc-800'} (tap to toggle)
+            </Text>
+          </Pressable>
 
-        <ThemedView style={styles.sectionsWrapper}>
-          <Collapsible title="File-based routing">
-            <ThemedText type="small">
-              This app has two screens: <ThemedText type="code">src/app/index.tsx</ThemedText> and{' '}
-              <ThemedText type="code">src/app/explore.tsx</ThemedText>
-            </ThemedText>
-            <ThemedText type="small">
-              The layout file in <ThemedText type="code">src/app/_layout.tsx</ThemedText> sets up
-              the tab navigator.
-            </ThemedText>
-            <ExternalLink href="https://docs.expo.dev/router/introduction">
-              <ThemedText type="linkPrimary">Learn more</ThemedText>
-            </ExternalLink>
-          </Collapsible>
+          {/* cx() with object conditions — same artifact-backed literals. */}
+          <View
+            className={cx('mt-3 rounded-lg bg-zinc-800', {
+              'bg-accent': active,
+            })}>
+            <Text className="p-3 text-sm text-white">cx() with object condition</Text>
+          </View>
 
-          <Collapsible title="Android, iOS, and web support">
-            <ThemedView type="backgroundElement" style={styles.collapsibleContent}>
-              <ThemedText type="small">
-                You can open this project on Android, iOS, and the web. To open the web version,
-                press <ThemedText type="smallBold">w</ThemedText> in the terminal running this
-                project.
-              </ThemedText>
-              <Image
-                source={require('@/assets/images/tutorial-web.png')}
-                style={styles.imageTutorial}
-              />
-            </ThemedView>
-          </Collapsible>
+          {/* Stepper: `p-${n}` is a template literal, so the multiplier is not a
+              build-time literal. n ∈ 5/7/9 → fallback parser (n × 4 points). */}
+          <View className="mt-3 rounded-lg bg-zinc-800 dark:bg-zinc-800 p-3">
+            <Text className="text-sm font-semibold text-white">Fallback stepper</Text>
+            <Text className="mt-1 text-xs text-zinc-400 dark:text-zinc-500">
+              {'className={`p-${n}`} — n is never a source literal.'}
+            </Text>
+            {/* flexDirection comes through the inline style escape hatch: the
+                Windforge View still resolves className and merges the two. */}
+            <View className="mt-2 gap-2" style={{ flexDirection: 'row' }}>
+              <Pressable
+                className="rounded-lg bg-zinc-700 p-3"
+                onPress={() => setStepIndex((i) => (i + STEPS.length - 1) % STEPS.length)}>
+                <Text className="text-sm text-white">−</Text>
+              </Pressable>
+              <View className={cx('rounded-lg bg-emerald-600', stepperClass)}>
+                <Text className="text-sm font-semibold text-white">
+                  {stepperClass} = {n * 4}pt
+                </Text>
+              </View>
+              <Pressable
+                className="rounded-lg bg-zinc-700 p-3"
+                onPress={() => setStepIndex((i) => (i + 1) % STEPS.length)}>
+                <Text className="text-sm text-white">+</Text>
+              </Pressable>
+            </View>
+          </View>
 
-          <Collapsible title="Images">
-            <ThemedText type="small">
-              For static images, you can use the <ThemedText type="code">@2x</ThemedText> and{' '}
-              <ThemedText type="code">@3x</ThemedText> suffixes to provide files for different
-              screen densities.
-            </ThemedText>
-            <Image source={require('@/assets/images/react-logo.png')} style={styles.imageReact} />
-            <ExternalLink href="https://reactnative.dev/docs/images">
-              <ThemedText type="linkPrimary">Learn more</ThemedText>
-            </ExternalLink>
-          </Collapsible>
+          {/* styled() on a third-party-shaped component (default mapping). */}
+          <StyledBadge className="mt-3 rounded-lg bg-accent p-4">
+            <Text className="text-sm font-semibold text-white">
+              styled(Badge) — custom component via prop mapping
+            </Text>
+          </StyledBadge>
 
-          <Collapsible title="Light and dark mode components">
-            <ThemedText type="small">
-              This template has light and dark mode support. The{' '}
-              <ThemedText type="code">useColorScheme()</ThemedText> hook lets you inspect what the
-              user&apos;s current color scheme is, and so you can adjust UI colors accordingly.
-            </ThemedText>
-            <ExternalLink href="https://docs.expo.dev/develop/user-interface/color-themes/">
-              <ThemedText type="linkPrimary">Learn more</ThemedText>
-            </ExternalLink>
-          </Collapsible>
+          {/* Plain RN ScrollView + useWindforgeStyle → contentContainerStyle.
+              The hook output (gap-3 p-3) feeds a secondary style surface that
+              the native protocol cannot bind directly. */}
+          <Text className="mt-4 text-sm font-semibold text-zinc-100 dark:text-zinc-300">
+            useWindforgeStyle → contentContainerStyle
+          </Text>
+          <ScrollView
+            horizontal
+            contentContainerStyle={contentStyle}
+            style={{ height: 64 }}>
+            <RNView style={{ borderRadius: 8, backgroundColor: '#047857', padding: 12 }}>
+              <Text style={{ color: '#fff', fontSize: 13 }}>item A</Text>
+            </RNView>
+            <RNView style={{ borderRadius: 8, backgroundColor: '#047857', padding: 12 }}>
+              <Text style={{ color: '#fff', fontSize: 13 }}>item B</Text>
+            </RNView>
+          </ScrollView>
 
-          <Collapsible title="Animations">
-            <ThemedText type="small">
-              This template includes an example of an animated component. The{' '}
-              <ThemedText type="code">src/components/ui/collapsible.tsx</ThemedText> component uses
-              the powerful <ThemedText type="code">react-native-reanimated</ThemedText> library to
-              animate opening this hint.
-            </ThemedText>
-          </Collapsible>
-        </ThemedView>
-        {Platform.OS === 'web' && <WebBadge />}
-      </ThemedView>
-    </ScrollView>
+          {/* Unknown token on purpose → WF2001 diagnostic. */}
+          <View className="mt-3 rounded-lg bg-zinc-800 dark:bg-zinc-800 p-3 rotate-45">
+            <Text className="text-xs text-zinc-400 dark:text-zinc-500">
+              rotate-45 is intentionally unsupported → appears in unknownTokens.
+            </Text>
+          </View>
+
+          {/* Live diagnostics panel. */}
+          <Text className="mt-4 text-sm font-semibold text-zinc-100 dark:text-zinc-300">
+            Runtime diagnostics
+          </Text>
+          <Text className="mt-1 text-xs text-zinc-400 dark:text-zinc-500">
+            fallbackParses should climb as you tap the stepper.
+          </Text>
+          <Text className="mt-2 text-xs text-zinc-500">{diagnostics}</Text>
+        </ScrollView>
+      </SafeAreaView>
+    </View>
   );
 }
-
-const styles = StyleSheet.create({
-  scrollView: {
-    flex: 1,
-  },
-  contentContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-  },
-  container: {
-    maxWidth: MaxContentWidth,
-    flexGrow: 1,
-  },
-  titleContainer: {
-    gap: Spacing.three,
-    alignItems: 'center',
-    paddingHorizontal: Spacing.four,
-    paddingVertical: Spacing.six,
-  },
-  centerText: {
-    textAlign: 'center',
-  },
-  pressed: {
-    opacity: 0.7,
-  },
-  linkButton: {
-    flexDirection: 'row',
-    paddingHorizontal: Spacing.four,
-    paddingVertical: Spacing.two,
-    borderRadius: Spacing.five,
-    justifyContent: 'center',
-    gap: Spacing.one,
-    alignItems: 'center',
-  },
-  sectionsWrapper: {
-    gap: Spacing.five,
-    paddingHorizontal: Spacing.four,
-    paddingTop: Spacing.three,
-  },
-  collapsibleContent: {
-    alignItems: 'center',
-  },
-  imageTutorial: {
-    width: '100%',
-    aspectRatio: 296 / 171,
-    borderRadius: Spacing.three,
-    marginTop: Spacing.two,
-  },
-  imageReact: {
-    width: 100,
-    height: 100,
-    alignSelf: 'center',
-  },
-});

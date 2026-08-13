@@ -143,6 +143,35 @@ Expected outcome (the Phase 4 kill criteria,
 - `bindings` stays bounded (mount/unmount churn does not leak families);
 - no unbounded counter growth across the full loop.
 
+## Dynamic screen verification (Phase 5)
+
+The Dynamic tab (`apps/example/src/app/explore.tsx`) exercises the runtime
+paths that build-time extraction cannot reach. Run the app and open the
+Dynamic tab; the diagnostics panel auto-refreshes every second.
+
+Check the following:
+
+- **ternary / `cx()` toggle** — tap the first box: the background flips
+  between `bg-accent` and `bg-zinc-800`. Both branches are string literals, so
+  they are in the artifact; runtime only selects one. `cacheHits` climbs.
+- **fallback stepper** — tap `+`/`−` on the stepper box. `className` is
+  `` `p-${n}` `` with `n ∈ {5,7,9}`, none of which appear as literals, so the
+  artifact has no entry and the controlled fallback parser resolves it.
+  `fallbackParses` climbs on each new value, and Metro logs a one-time
+  `WF2002` (fallback used) the first time. The box's padding visibly changes
+  (20pt / 28pt / 36pt).
+- **unknown token** — the `rotate-45` box intentionally cannot be resolved;
+  it appears in `unknownTokens`, and Metro logs a one-time `WF2001` (unknown
+  class) in dev.
+- **prop mapping** — the `styled(Badge)` box renders with `className`
+  resolved to `style`; the horizontal `ScrollView` below it uses
+  `useWindforgeStyle('gap-3 p-3')` for its `contentContainerStyle`.
+- **appearance flip** — flip dark/light; all boxes with `dark:` variants
+  update, matching the Home/Stress tabs.
+
+These are the Phase 5 deliverables; build-time resolution remains the primary
+path (Home tab).
+
 ## Troubleshooting
 
 - **"WindforgeStyle TurboModule not found" warning** — the app is running

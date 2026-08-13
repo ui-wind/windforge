@@ -140,6 +140,11 @@ cache
 
 Runtime fallback must never become the normal path for static classes.
 
+> Status (2026-08-13): implemented as `parseStaticUtility` in `@windforge/ir`
+> — a controlled static-spacing subset that emits IR identical to the build
+> path. Sanctioned exception to Rule 2, recorded as a decision record (Rule 13)
+> in `docs/IMPLEMENTATION_ROADMAP.md` Phase 5.
+
 ## 9. Web lowering
 
 Web may lower IR to CSS rules/classes.

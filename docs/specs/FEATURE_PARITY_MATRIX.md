@@ -40,11 +40,11 @@ Legend:
 
 | Feature | Priority | Notes |
 |---|---:|---|
-| Automatic className mapping | P0 | All standard RN components |
+| Automatic className mapping | P0 | All standard RN components (Phase 5: styled()/prop mapping for third-party) |
 | Static StyleSheet lowering | P0 | Fast baseline |
-| Shared immutable style cache | P0 | Deduplicate styles |
-| Dynamic class lookup | P0 | Generated tables first |
-| Runtime class fallback | P1 | Controlled and cached |
+| Shared immutable style cache | P0 | Deduplicate styles (Phase 5: composed-string flyweight identity) |
+| Dynamic class lookup | P0 | Generated tables first (Phase 5) |
+| Runtime class fallback | P1 | Controlled and cached (Phase 5: parseStaticUtility) |
 | Fabric backend | P0 | New Architecture only |
 | ShadowTree updates | P1 | Native update path |
 | Native style cache | P1 | C++/native if benchmarked |
@@ -84,18 +84,18 @@ Legend:
 
 ## Developer experience
 
-| Feature | Priority |
-|---|---:|
-| Metro plugin | P0 |
-| CLI | P0 |
-| diagnostics | P0 |
-| IntelliSense metadata | P1 |
-| source maps | P1 |
-| HMR | P0 |
-| monorepo support | P0 |
-| cache inspection | P1 |
-| compiler debug mode | P1 |
-| generated IR inspection | P1 |
+| Feature | Priority | Notes |
+|---|---:|---|
+| Metro plugin | P0 | |
+| CLI | P0 | |
+| diagnostics | P0 | Phase 5: runtime counters + WF2001/WF2002 warn-once |
+| IntelliSense metadata | P1 | |
+| source maps | P1 | |
+| HMR | P0 | |
+| monorepo support | P0 | |
+| cache inspection | P1 | |
+| compiler debug mode | P1 | |
+| generated IR inspection | P1 | |
 
 ## Extensibility
 

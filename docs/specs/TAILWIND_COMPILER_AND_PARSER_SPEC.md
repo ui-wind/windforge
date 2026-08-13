@@ -334,6 +334,11 @@ resolveDynamicClassName(value)
 
 but cache the result and never make this the primary path.
 
+> Status (2026-08-13): conditional string-literal expressions are extracted at
+> build time; arbitrary runtime strings resolve through the composed-string
+> cache first and the controlled `parseStaticUtility` fallback second.
+> See `docs/IMPLEMENTATION_ROADMAP.md` Phase 5.
+
 ## CSS parser
 
 Windforge should support custom CSS classes similar to Uniwind's CSS parser and NativeWind's CSS interoperability layer, but the parser should lower CSS declarations into the same Style IR.

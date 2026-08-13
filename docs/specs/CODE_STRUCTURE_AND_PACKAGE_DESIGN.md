@@ -216,6 +216,12 @@ columnWrapperClassName
 
 support must be represented as prop mappings rather than hard-coded parser rules.
 
+> Status (2026-08-13): `registerComponent`/`styled()`/`useWindforgeStyle()`
+> implement this registry, with default mappings for ScrollView/SectionList
+> (`contentContainerClassName`) and FlatList (`columnWrapperClassName`).
+> `ListHeader`/`ListFooterComponentClassName` (element-valued props) and
+> `animatedComponent` are deferred. See `docs/IMPLEMENTATION_ROADMAP.md` Phase 5.
+
 ## Metro
 
 Metro should orchestrate transformation and dependency watching.

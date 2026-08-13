@@ -139,17 +139,84 @@ No "zero re-render" statement is published without the measurement that
 backs it (architecture §9/§20); the full benchmark harness remains separate
 infrastructure (`docs/specs/PERFORMANCE_BENCHMARK_SPEC.md`).
 
-## Phase 5 — Dynamic runtime
+## Phase 5 — Dynamic runtime ✅
 
-Add:
+Goal: resolve className at runtime for expressions build-time extraction
+cannot reach, while keeping build-time resolution primary. Unknown tokens try
+a controlled fallback parser before being skipped; diagnostics make both paths
+observable.
 
-- conditional class expressions
-- runtime class lookup
-- caching
-- third-party prop mapping
-- diagnostics
+Done:
 
-Runtime parsing remains a fallback.
+- ✅ `cx`/`cn` — conditional class expression helper (clsx semantics: strings,
+  numbers, booleans, arrays, record-of-conditions; whitespace-normalized).
+- ✅ controlled runtime fallback parser `parseStaticUtility` in
+  `@windforge/ir` — static spacing utilities (`p`/`m`/`gap`/`w`/`h`/`size`/
+  `top`/`right`/`bottom`/`left`, negatives, decimals, fractions, `full`),
+  emitting the exact same IR shape the build produces so artifact and fallback
+  agree byte-for-byte.
+- ✅ resolve chain: artifact lookup first → fallback parser → skip. The
+  composed-string result is cached (flyweight identity: the same className +
+  condition-state string returns the same object).
+- ✅ runtime diagnostics — counters (`resolves`, `cacheHits`, `cacheMisses`,
+  `fallbackParses`, `fallbackMisses`) and a deduplicated `unknownTokens` list
+  via `getRuntimeDiagnostics()`; dev-gated warn-once codes WF2001 (unknown
+  class) and WF2002 (first fallback use).
+- ✅ third-party prop mapping — `styled()` HOC, `registerComponent`/
+  `getComponentMapping` registry, `useWindforgeStyle()` hook, and default
+  secondary-surface mappings (`contentContainerClassName`,
+  `columnWrapperClassName`). Native delivery links only the primary
+  `className → style` mapping; secondary surfaces subscribe and re-render.
+- ✅ bench infra — `vitest bench` (`resolve.bench.ts`) plus a `bench` turbo
+  task. Measured on Mac mini (Apple M4, 24 GB):
+
+  | case | median |
+  | --- | --- |
+  | static warm (composed-cache hit) | ~4.1M ops/s |
+  | static cold (cache cleared/iter) | ~1.05M ops/s |
+  | fallback parse + lower | ~1.4M ops/s |
+  | fallback cache hit | ~5.4M ops/s |
+
+  The composed-string cache is the hot path for condition flips; cold resolve
+  is unchanged in order of magnitude from the Phase 1 per-token baseline.
+
+Scope notes:
+
+- The fallback subset deliberately excludes `px`/`py`/`mx`/`my`/`inset` and
+  arbitrary values. Two-value shorthands (`padding-inline`/`padding-block`/
+  `margin-inline`) are not statically lowered at build time yet, so keeping
+  them out of the fallback avoids the runtime being more capable than the
+  build. A follow-up adds build-side lowering for these shorthands.
+- Arbitrary values and non-static utilities are resolved only by the build
+  path; the fallback declines them and they surface as WF2001 unknown tokens.
+
+### Decisions
+
+These are the Phase 5 decision records (Rule 13).
+
+- **Fallback parser location (exception to Rule 2).** `parseStaticUtility` lives
+  in `@windforge/ir`, a sanctioned exception to the rule against placing
+  Tailwind parsing in the core IR (`docs/specs/COMPILER_PIPELINE_SPEC.md`
+  §Dynamic extraction). It is a controlled subset, not a general Tailwind
+  parser, and emits IR rather than native values.
+- **Diagnostic code ranges.** WF0xxx = CLI, WF1xxx = Tailwind frontend,
+  WF2xxx = runtime (this phase: WF2001 unknown class, WF2002 first fallback
+  use).
+- **Composed-string cache is a flyweight.** Identical className + state
+  strings return the same object reference, enabling cheap equality checks
+  downstream; the cache is keyed by registry version so re-registering an
+  artifact invalidates entries.
+- **Fabric links the primary mapping only.** The native protocol binds one
+  className string per host node; a component with only the `className →
+  style` pair links natively, while components with secondary style surfaces
+  subscribe to conditions and re-render (correctness over zero-re-render).
+- **Spacing unit is a hard-coded 4px multiplier.** The fallback honors the
+  default `--spacing: 0.25rem` × 16px grid; a custom `--spacing` override is
+  not respected by the fallback (the build path resolves theme overrides, and
+  scanned literals always win).
+
+Demo: `apps/example/src/app/explore.tsx` (Dynamic tab). Verification runbook:
+`docs/guides/NATIVE_SETUP_IOS.md`.
 
 ## Phase 6 — Reanimated
 
