@@ -1,0 +1,55 @@
+# Windforge CI — build, typecheck, and test across the workspace.
+#
+# Scope decisions (Phase 9):
+# - ubuntu-latest only. iOS/Android build + simulator/emulator runs and web
+#   export pixel verification are manual runbook steps (docs/guides/*), not CI,
+#   because they need macOS/Xcode, Android SDK images, and a display server.
+# - No lint step: `expo lint` currently fails deterministically on example-app
+#   hook-rule errors. Revisit once lint is clean repo-wide.
+# - Turbo cache is local only (node_modules/.cache/turbo), restored across runs
+#   via actions/cache. No remote cache configured.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        # version is read from the packageManager field in package.json
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Restore turbo cache
+        uses: actions/cache@v4
+        with:
+          path: node_modules/.cache/turbo
+          key: turbo-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-${{ github.sha }}
+          restore-keys: |
+            turbo-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}-
+            turbo-${{ runner.os }}-
+
+      - name: Build
+        run: pnpm turbo run build
+
+      - name: Typecheck
+        run: pnpm turbo run typecheck
+
+      - name: Test
+        run: pnpm turbo run test

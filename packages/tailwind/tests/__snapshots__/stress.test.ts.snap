@@ -1,0 +1,9 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`full-utility-surface sweep > snapshots the artifact shape (update only on intended compiler changes) 1`] = `
+{
+  "classes": 85,
+  "conditions": 7,
+  "hash": "2d860987",
+}
+`;

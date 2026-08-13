@@ -159,6 +159,16 @@ const DEFERRED_PROPERTIES = new Set([
   'user-select',
 ]);
 
+/** Per-side border styles (`border-t` emits `border-top-style` next to the
+ * width). React Native only has an all-sides borderStyle; see
+ * lowerSideBorderStyle. */
+const SIDE_BORDER_STYLE_PROPERTIES = new Set([
+  'border-top-style',
+  'border-right-style',
+  'border-bottom-style',
+  'border-left-style',
+]);
+
 /** Shorthands that expand into typed multi-side values. Unparsed (var/calc)
  * variants of these are resolved to a single number and synthesized into the
  * same typed shape so one expansion path handles both. */
@@ -297,6 +307,15 @@ const ALIGNMENT_KEYWORD_TARGETS = new Set([
 /** Extract a px value from a typed length-percentage. Percentages return null. */
 function typedLengthPx(value: AnyRecord): number | null {
   const inner = value.value as AnyRecord | undefined;
+  // Bare dimension records (e.g. border-radius corner tokens
+  // `{type:'dimension', value:{unit, value}}`) carry the unit directly.
+  if (inner && typeof inner.unit === 'string') {
+    const amount = inner.value as number;
+    if (typeof amount !== 'number') return null;
+    if (inner.unit === 'px') return amount;
+    if (inner.unit === 'rem') return amount * REM_PX;
+    return null;
+  }
   const dimension = (inner?.value ?? inner) as AnyRecord | undefined;
   if (!dimension) return null;
   const unit = dimension.unit as string;
@@ -314,6 +333,43 @@ function typedPercentage(value: AnyRecord): number | null {
   const raw = inner.value;
   const fraction = typeof raw === 'number' ? raw : (raw as AnyRecord)?.value;
   return typeof fraction === 'number' ? fraction * 100 : null;
+}
+
+/** `calc(infinity * 1px)` (Tailwind's `rounded-full`) lowers to a px
+ * dimension whose value is null; map it to a large finite radius. RN clips
+ * the radius to the view's half-size, so any large number is visually
+ * equivalent — 9999 matches the common "pill" idiom. */
+const INFINITE_RADIUS_PX = 9999;
+
+function isInfiniteLength(token: unknown): boolean {
+  if (!token || typeof token !== 'object') return false;
+  const inner = (token as AnyRecord).value as AnyRecord | undefined;
+  const dimension = (inner?.value ?? inner) as AnyRecord | undefined;
+  if (!dimension || dimension.unit !== 'px') return false;
+  return dimension.value === null || dimension.value === undefined;
+}
+
+/** Lower one border-radius corner. lightningcss types each corner as a list
+ * of one or two length-percentages (horizontal, then optional vertical
+ * radius); Tailwind only emits the single-value form. */
+function lowerRadiusValue(corner: unknown, ctx: LowerContext, propertyLabel: string): IRValue | null {
+  const tokens = Array.isArray(corner) ? corner : [corner];
+  const significant = tokens.filter((t) => t && typeof t === 'object');
+  if (significant.length === 0) return null;
+  if (significant.length > 1) {
+    const [horizontal, vertical] = significant;
+    if (JSON.stringify(vertical) !== JSON.stringify(horizontal)) {
+      ctx.diagnostics.push({
+        code: 'WF1005',
+        message: `Cannot statically lower elliptical ${propertyLabel}`,
+      });
+      return null;
+    }
+  }
+  const first = significant[0] as unknown;
+  if (isInfiniteLength(first)) return { kind: 'number', value: INFINITE_RADIUS_PX };
+  if (!first || typeof first !== 'object') return null;
+  return typedDimensionIR(first as AnyRecord);
 }
 
 function typedDimensionIR(value: AnyRecord): IRValue | null {
@@ -377,6 +433,32 @@ function lowerUnparsed(
     return null;
   }
 
+  // Keywords are not numeric either: after var substitution the value must
+  // be a single ident (Tailwind's `border-style: var(--tw-border-style)`).
+  if (kind === 'keyword') {
+    if (!substituted) {
+      ctx.diagnostics.push({
+        code: 'WF1001',
+        message: `Unresolvable var() reference in "${printTokens(tokens)}"`,
+      });
+      return null;
+    }
+    const significant = substituted.filter((t) => t.type !== 'white-space');
+    if (significant.length === 1) {
+      const only = significant[0] as CssToken;
+      if (only.type === 'ident' || only.type === 'string') {
+        const scalar = scalarValue(only);
+        const text = typeof scalar === 'string' ? scalar : String(scalar ?? '');
+        if (text) return { kind: 'string', value: text };
+      }
+    }
+    ctx.diagnostics.push({
+      code: 'WF1005',
+      message: `Cannot statically lower ${propertyLabel}: "${printTokens(tokens)}"`,
+    });
+    return null;
+  }
+
   const resolved = resolveNumeric(tokens, vars, ctx.diagnostics);
   if (resolved !== null) return numericToIR(resolved);
 
@@ -407,6 +489,35 @@ function lowerTypedColor(value: AnyRecord, ctx: LowerContext, propertyLabel: str
     message: `Cannot statically lower color for ${propertyLabel}`,
   });
   return null;
+}
+
+/** Per-side `border-*-style` (see SIDE_BORDER_STYLE_PROPERTIES). The value
+ * `solid` matches RN's borderStyle default → no-op; anything else is
+ * reported (WF1003). */
+function lowerSideBorderStyle(
+  declaration: CollectedDeclaration,
+  vars: VariableMap,
+  ctx: LowerContext,
+): LoweredDeclaration[] {
+  let keyword: string | null = null;
+  if (declaration.unparsed) {
+    const substituted = substituteVars(declaration.value as CssToken[], vars);
+    if (substituted) {
+      const significant = substituted.filter((t) => t.type !== 'white-space');
+      if (significant.length === 1) {
+        const scalar = scalarValue(significant[0] as CssToken);
+        if (typeof scalar === 'string') keyword = scalar;
+      }
+    }
+  } else {
+    keyword = typedKeyword(declaration.value as AnyRecord);
+  }
+  if (keyword === 'solid') return [];
+  ctx.diagnostics.push({
+    code: 'WF1003',
+    message: `Property "${declaration.property}" has no React Native equivalent; skipped`,
+  });
+  return [];
 }
 
 /** Lower one side of a box shorthand (padding/margin/border-width). */
@@ -1065,10 +1176,7 @@ export function lowerDeclaration(
     }
     if (property === 'border-radius') {
       const keys = ['topLeft', 'topRight', 'bottomRight', 'bottomLeft'] as const;
-      const values = keys.map((key) => {
-        const side = typed[key];
-        return side && typeof side === 'object' ? typedDimensionIR(side as AnyRecord) : null;
-      });
+      const values = keys.map((key) => lowerRadiusValue(typed[key], ctx, property));
       if (values.some((v) => v === null)) return [];
       const [a, b, c, d] = values as [IRValue, IRValue, IRValue, IRValue];
       if (sameValue(a, b) && sameValue(b, c) && sameValue(c, d)) {
@@ -1131,6 +1239,15 @@ export function lowerDeclaration(
   if (property === 'font-family') return lowerFontFamily(declaration, vars, ctx);
 
   if (DEFERRED_PROPERTIES.has(property)) return [];
+
+  // Tailwind's `border-t`/`border-r`/… emit a per-side style next to the
+  // width. React Native only lowers an all-sides borderStyle, and its
+  // default is already `solid` — so Tailwind's `solid` guard is a no-op we
+  // can drop silently. Anything else would need a per-side borderStyle that
+  // RN has no equivalent for.
+  if (SIDE_BORDER_STYLE_PROPERTIES.has(property)) {
+    return lowerSideBorderStyle(declaration, vars, ctx);
+  }
 
   const mapping = SIMPLE_PROPERTIES[property];
   if (!mapping) {

@@ -31,11 +31,15 @@
   },
   "peerDependencies": {
     "react": ">=19",
-    "react-native": ">=0.86",
-    "react-native-safe-area-context": ">=5"
+    "react-native": ">=0.86 <0.87",
+    "react-native-safe-area-context": ">=5",
+    "react-native-web": ">=0.21 <0.22"
   },
   "peerDependenciesMeta": {
     "react-native-safe-area-context": {
+      "optional": true
+    },
+    "react-native-web": {
       "optional": true
     }
   },

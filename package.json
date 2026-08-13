@@ -13,9 +13,11 @@
     "test": "turbo run test",
     "typecheck": "turbo run typecheck",
     "lint": "turbo run lint",
+    "bench": "turbo run bench",
     "clean": "turbo run clean && rm -rf node_modules"
   },
   "devDependencies": {
+    "pngjs": "^7.0.0",
     "turbo": "^2.5.0",
     "typescript": "^5.9.2",
     "vitest": "^3.2.4"
