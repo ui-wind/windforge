@@ -19,9 +19,9 @@ namespace windforge::fabric {
  * pending styles in the same transaction.
  *
  * It does NOT cover updates that never trigger a React commit (e.g. a
- * dark-mode toggle with no state change) — those are delivered through
- * UIManager::updateShadowTree by the module. The two mechanisms together
- * form the piggyback delivery mode of NATIVE_DELIVERY_PROTOCOL_SPEC.
+ * dark-mode toggle with no state change) — those are committed directly
+ * into the ShadowTree by the ShadowTreeSynchronizer. The two mechanisms
+ * together form the native delivery of NATIVE_DELIVERY_PROTOCOL_SPEC.
  */
 class StyleCommitHook final : public facebook::react::UIManagerCommitHook {
  public:

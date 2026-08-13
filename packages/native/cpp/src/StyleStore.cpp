@@ -1,14 +1,13 @@
 #include <windforge/fabric/StyleStore.h>
 
-#include <unordered_map>
-
 namespace windforge::fabric {
 
 namespace react = facebook::react;
 
 StyleStore::StyleStore(std::shared_ptr<react::UIManager> uiManager)
     : uiManager_(std::move(uiManager)),
-      commitHook_(*uiManager_, registry_) {}
+      commitHook_(*uiManager_, registry_),
+      synchronizer_(*uiManager_, registry_) {}
 
 void StyleStore::registerStyles(folly::dynamic const& classToStyle) {
   if (!classToStyle.isObject()) {
@@ -30,32 +29,16 @@ void StyleStore::updateStyles(folly::dynamic const& diff) {
   }
   styleUpdates_.fetch_add(diff.size(), std::memory_order_relaxed);
 
-  // Deliver the change even though React has nothing to commit: map every
-  // live binding for a changed className to its node tag and let the
-  // UIManager clone + commit the tree itself.
-  std::unordered_map<react::Tag, folly::dynamic> tagToProps;
-  for (auto const& entry : diff.items()) {
-    auto className = entry.first.asString();
-    for (auto tag : registry_.collectLiveTags({className})) {
-      tagToProps[tag] = entry.second;
-    }
-  }
-  if (tagToProps.empty()) {
-    return;
-  }
-  // Known debt (see StyleRegistry::collectLiveTags): tags are read outside
-  // the commit transaction. updateShadowTree ignores tags it cannot find,
-  // and the commit hook re-applies anything still pending, so staleness is
-  // safe but can make a push a no-op; the hook covers the next React commit.
-  uiManager_->updateShadowTree(std::move(tagToProps));
-  pushes_.fetch_add(1, std::memory_order_relaxed);
+  // Deliver the change even though React has nothing to commit: commit the
+  // pending bindings straight into each surface's ShadowTree, keyed by
+  // family inside the tree's own transaction (ShadowTreeSynchronizer).
+  synchronizer_.commitAllPending();
 }
 
 void StyleStore::link(react::Tag tag, std::string className) {
   // Tag → family lookup: findShadowNodeByTag_DEPRECATED is acceptable at
   // Phase 3 scale (it is the same primitive the UIManager's own update path
-  // walks past); the direct-commit mode resolves the family on the thread
-  // that owns the tag instead.
+  // walks past); link happens once per mount, off the commit path.
   if (auto node = uiManager_->findShadowNodeByTag_DEPRECATED(tag)) {
     registry_.link(node->getFamilyShared(), std::move(className));
     links_.fetch_add(1, std::memory_order_relaxed);
@@ -81,7 +64,8 @@ folly::dynamic StyleStore::getDiagnostics() const {
   result["styleUpdates"] = static_cast<int64_t>(
       styleUpdates_.load(std::memory_order_relaxed));
   result["links"] = static_cast<int64_t>(links_.load(std::memory_order_relaxed));
-  result["pushes"] = static_cast<int64_t>(pushes_.load(std::memory_order_relaxed));
+  result["directCommits"] =
+      static_cast<int64_t>(synchronizer_.directCommits());
   result["commitsObserved"] = static_cast<int64_t>(commitHook_.commitsObserved());
   result["commitsMutated"] = static_cast<int64_t>(commitHook_.commitsMutated());
   return result;

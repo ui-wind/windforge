@@ -23,8 +23,8 @@ export interface WindforgeDiagnostics {
   styleUpdates?: number;
   /** Successful link() calls. */
   links?: number;
-  /** updateStyles calls that actually pushed to the ShadowTree. */
-  pushes?: number;
+  /** Condition-only updates committed directly into the ShadowTree. */
+  directCommits?: number;
   /** React commits observed by the commit hook. */
   commitsObserved?: number;
   /** React commits the hook mutated (styles re-merged). */
