@@ -78,9 +78,15 @@ Two delivery mechanisms cooperate inside the native store:
 
 1. **Commit hook** (`UIManagerCommitHook::shadowTreeWillCommit`) — re-merges
    pending styles into every React commit, because React-owned props would
-   otherwise overwrite merged styles on the next commit.
-2. **Direct push** — condition changes with no React commit at all go
-   through the first-party `UIManager::updateShadowTree(tagToProps)` API.
+   otherwise overwrite merged styles on the next commit. It rides on
+   React-initiated commits only (`React`, `ReactRevisionMerge`).
+2. **Direct native commit** (`ShadowTreeSynchronizer`, Phase 4) — condition
+   changes with no React commit at all. `updateStyles` snapshots the
+   pending bindings per surface and commits each surface's ShadowTree
+   through the first-party `ShadowTree::commit` API; the whole surface
+   lands in one transaction and CAS-retries against React's concurrent
+   commits. Commits carry source `Unknown`, so the hook above never
+   re-merges them.
 
 ## Verifying it works
 
@@ -91,18 +97,51 @@ counters from the native store:
 | --- | --- |
 | `available` | module installed and holding the `UIManager` |
 | `styles` | registered classNames |
-| `bindings` | live tag → className bindings |
+| `bindings` | live family → className bindings |
 | `styleUpdates` | className registrations/updates received from JS |
 | `links` | successful `link()` calls |
-| `pushes` | `updateStyles` calls that pushed to the shadow tree |
+| `directCommits` | condition-only updates committed directly into the ShadowTree |
 | `commitsObserved` / `commitsMutated` | React commits seen / mutated by the hook |
 
-After toggling dark mode, expect `pushes` (or `commitsMutated`) to increase
-and the UI to update. On the fabric backend the styled tree does not depend
-on React re-renders for this update — verify absence of re-renders with the
-React DevTools profiler or console assertions if you need evidence for a
-claim; see `docs/specs/PERFORMANCE_BENCHMARK_SPEC.md` for the benchmark
+After toggling dark mode, expect `directCommits` to increase and the UI to
+update. On the fabric backend the styled tree does not depend on React
+re-renders for this update — verify absence of re-renders with the React
+DevTools profiler or console assertions if you need evidence for a claim;
+see `docs/specs/PERFORMANCE_BENCHMARK_SPEC.md` for the benchmark
 methodology.
+
+## Stress test runbook (Phase 4 kill criteria)
+
+The example app ships a stress screen (`apps/example/src/app/stress.tsx`)
+that runs React commits every 100ms while mounting/unmounting styled nodes
+every 400ms. To exercise the direct-commit path under pressure:
+
+```bash
+# 1. Boot the simulator and run the app on the Stress tab.
+
+# 2. Flip appearance 60 times while the screen churns:
+for i in {1..60}; do
+  if [ $((i % 2)) -eq 0 ]; then
+    xcrun simctl ui booted appearance dark
+  else
+    xcrun simctl ui booted appearance light
+  fi
+  sleep 0.15
+done
+
+# 3. On the Stress tab the diagnostics panel auto-refreshes every 2s
+#    (the button refreshes on tap as well).
+```
+
+Expected outcome (the Phase 4 kill criteria,
+`docs/specs/NATIVE_DELIVERY_PROTOCOL_SPEC.md` §2):
+
+- **no crash**; the final appearance matches the last flip;
+- `directCommits` increased once per flip that found pending bindings;
+- `commitsMutated` tracks `commitsObserved` while the screen churns — the
+  hook re-pins the merged style into React's own commits (persistence);
+- `bindings` stays bounded (mount/unmount churn does not leak families);
+- no unbounded counter growth across the full loop.
 
 ## Troubleshooting
 
@@ -115,12 +154,12 @@ methodology.
 - **Stale native code after changes** — `npx expo prebuild --clean && pod
   install` in the app's `ios/` directory.
 
-## Limitations (Phase 3)
+## Limitations
 
 - iOS only; Android delivery lands in a later phase.
-- `link` resolves a tag → shadow node via
-  `findShadowNodeByTag_DEPRECATED` — flagged tech debt
-  (`docs/specs/NATIVE_DELIVERY_PROTOCOL_SPEC.md`).
-- Direct push rides the first-party `updateShadowTree` BFS
-  (`O(tree)` scan per push). The direct-commit optimization (family-keyed
-  path, torn-frame kill criteria) is Phase 4.
+- `link` resolves a tag → `ShadowNodeFamily` via
+  `findShadowNodeByTag_DEPRECATED` — once per mount, off the commit path,
+  but still flagged tech debt (`docs/specs/NATIVE_DELIVERY_PROTOCOL_SPEC.md`).
+- Persistence across React commits uses the commit hook (re-merge per
+  React commit). The `nativeProps_DEPRECATED` alternative is evaluated in
+  `reference/UNISTYLES_REFERENCE.md` and stays a backlog option.

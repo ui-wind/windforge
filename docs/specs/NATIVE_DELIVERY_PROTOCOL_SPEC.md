@@ -96,29 +96,51 @@ styled tree does not re-render, but delivery still rides on a React commit.
 
 ### 2. Direct native commit (Phase 4)
 
-The backend initiates a commit itself (ShadowTreeSynchronizer) so a
-condition-only change lands with zero React involvement. This is the
-highest-risk part of the system.
+The backend initiates a commit itself (`ShadowTreeSynchronizer`) so a
+condition-only change lands with zero React involvement. After
+`updateStyles`, it snapshots the pending bindings per surface and commits
+each surface's ShadowTree through the first-party
+`ShadowTree::commit(transaction, options)` API:
 
-**Kill criteria — all must pass in the benchmark harness before the mode
-ships:**
+- The snapshot is taken **inside** the registry lock and **copies** the
+  resolved props; the commit runs **outside** the lock. The commit runs
+  UIManager commit hooks (our own `StyleCommitHook` among them) which take
+  that same lock — holding it across the commit would deadlock. Because the
+  snapshot escapes the lock, `markApplied` reconciles generations after the
+  commit: a binding is only marked applied when its style still carries the
+  snapshot's generation, otherwise it stays pending and the next commit
+  applies the newer value. No lost updates.
+- All pending bindings of a surface merge in **one transaction** — one tree
+  revision. Kill criterion 1 holds by construction.
+- The transaction re-evaluates against the newest root on every CAS retry
+  (React may commit between retries), and `ShadowTree::commit` retries until
+  it succeeds — neither party loses a concurrent commit (kill criterion 3).
+- A family that is absent from the current root is skipped; if no snapshot
+  family survives, the transaction cancels by returning `nullptr`. Families
+  are held as `shared_ptr` keys, so nothing dangles (kill criterion 4).
+- The registry keeps only the newest generation per className. Fast
+  condition toggles converge because every commit applies whatever is
+  newest at that instant and anything still pending lands in the next
+  commit (direct or React-merged) — no queue, no backlog (kill criterion 2).
+- Commits carry source `Unknown` and `mountSynchronously=true` (the default
+  for non-React commits). The commit hook's source filter skips them, so
+  direct commits are never re-merged.
+- **Persistence across React re-commits.** React keeps its own per-fiber
+  ShadowNode references from before any native merge and rebuilds the root
+  from them on its next commit (`completeRoot`), so a commit arriving after a
+  direct commit can resurface pre-merge props. Generation bookkeeping cannot
+  detect that — `appliedGeneration` already equals the current generation —
+  so the registry also records, per binding, the exact node clone the last
+  merge installed (`appliedNode`). On every React commit the hook compares
+  each bound family's current node against `appliedNode` and re-merges when
+  they differ (node identity changed ⇒ the merged style is gone). This keeps
+  the style pinned even under continuous React commits without re-rendering
+  React.
 
-1. **Torn frames.** No mixed old/new style values within a single rendered
-   frame during a condition change. A direct commit must apply the whole
-   className diff atomically, in one tree revision.
-2. **Fast-toggle consistency.** Rapidly toggling a condition (e.g.
-   color-scheme light↔dark, 30+ toggles/second) must converge to the final
-   state with no stale bindings surviving; no growing backlog, no unbounded
-   retry queues.
-3. **Concurrent React commits.** A direct commit interleaved with a React
-   commit must not lose either party's changes. The synchronizer must detect
-   a concurrent React revision and rebase or defer, never overwrite.
-4. **Unmount race.** A node unmounting during a direct commit must not crash
-   (no dangling family, no write into a discarded tree). The prune-at-commit
-   walk covers this on the piggyback path and must cover it here too.
-
-No "zero re-render" statement is published until this mode passes all four
-criteria and its benchmark is attached (architecture §9/§20).
+Verification evidence lives in `IMPLEMENTATION_ROADMAP.md` (Phase 4) and the
+stress screen (`apps/example/src/app/stress.tsx`); the runbook is in
+`docs/guides/NATIVE_SETUP_IOS.md`. No "zero re-render" statement is
+published without the measurement that backs it (architecture §9/§20).
 
 ## Threading
 

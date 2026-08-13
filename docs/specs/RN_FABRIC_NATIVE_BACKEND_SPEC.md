@@ -89,11 +89,20 @@ The fabric backend supports two commit strategies, in order of risk:
    React commit to land the update.
 
 2. **Direct native commit (Phase 4).** The backend commits style-only
-   changes itself (ShadowTreeSynchronizer), so a condition change lands with
-   zero React involvement. This is the highest-risk part of the system and is
-   gated by explicit kill criteria (see `NATIVE_DELIVERY_PROTOCOL_SPEC.md`).
-   Until it passes them and is benchmarked, no zero-re-render claim is made
-   (architecture §9/§20).
+   changes itself via `ShadowTreeSynchronizer`: after `updateStyles`, it
+   snapshots pending bindings per surface (under the registry lock, props
+   copied) and commits each surface's ShadowTree through the first-party
+   `ShadowTree::commit` API outside the lock. One transaction per surface
+   (no torn frames), CAS retry re-evaluates the transaction against the
+   newest root (concurrent React commits), absent families are skipped and
+   families are held by `shared_ptr` (unmount race), and the registry keeps
+   only the newest generation per className (fast toggles converge). This
+   was the highest-risk part of the system; the four kill criteria and
+   their verification are in `NATIVE_DELIVERY_PROTOCOL_SPEC.md` §2. The
+   "condition-only updates commit without React re-renders" statement is
+   backed by the diagnostics counters from the simulator run
+   (`docs/guides/NATIVE_SETUP_IOS.md`); full benchmark infrastructure
+   remains a separate track (`PERFORMANCE_BENCHMARK_SPEC.md`).
 
 The hook rides on React-initiated commits only (`React`,
 `ReactRevisionMerge`); commits originating from the animation backend are

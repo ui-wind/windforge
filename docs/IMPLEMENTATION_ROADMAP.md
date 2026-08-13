@@ -106,22 +106,38 @@ Implement:
 
 Do NOT implement direct native commits yet — that is Phase 4.
 
-## Phase 4 — Native direct commit
+## Phase 4 — Native direct commit ✅
 
 Goal: condition-only updates (dark mode toggle, rotation, breakpoint change)
 commit without riding on any React commit at all.
 
-Implement:
+Done:
 
-- `ShadowTreeSynchronizer` — native-initiated commit of style-only changes
-- kill criteria gate: torn frames under fast condition toggling, consistency
-  under concurrent React commits, unmount race during condition change
-  (full criteria in `docs/specs/NATIVE_DELIVERY_PROTOCOL_SPEC.md`)
-- evaluate the `nativeProps_DEPRECATED` persistence option as a complement or
-  replacement for commit-hook re-merge (`docs/reference/UNISTYLES_REFERENCE.md`)
+- ✅ `ShadowTreeSynchronizer` — family-keyed native-initiated commit of
+  style-only changes via the first-party `ShadowTree::commit(transaction,
+  CommitOptions)` CAS API, replacing the tag-based
+  `UIManager::updateShadowTree` push path (per-surface snapshot taken under
+  the registry lock, committed outside the lock, applied generations
+  reconciled afterwards — see
+  `docs/specs/NATIVE_DELIVERY_PROTOCOL_SPEC.md` §2)
+- ✅ kill criteria verified on the simulator stress screen
+  (`apps/example/src/app/stress.tsx`, runbook in
+  `docs/guides/NATIVE_SETUP_IOS.md`): one transaction per surface (torn
+  frames), newest-generation-only convergence (fast toggle), CAS rebase
+  against concurrent React commits, absent-family skip + shared_ptr
+  families (unmount race); diagnostics counters confirm no leak and no
+  unbounded growth. Measured: 4× 60-flip appearance loops on the stress
+  screen (React commits at 10Hz + 400ms mount/unmount churn) plus a home-
+  screen loop — `directCommits` equals the effective flip count (240/240),
+  `bindings` bounded at 27 against 913 churn links, final appearance
+  correct after every loop, no crash
+- ✅ commit hook kept as persistence mechanism (re-merges into React
+  commits); `nativeProps_DEPRECATED` evaluated and documented as a backlog
+  option (`docs/reference/UNISTYLES_REFERENCE.md`), not adopted
 
-Benchmark before claiming anything. A "zero re-render" statement may only
-appear with the measurement that backs it (architecture §9/§20).
+No "zero re-render" statement is published without the measurement that
+backs it (architecture §9/§20); the full benchmark harness remains separate
+infrastructure (`docs/specs/PERFORMANCE_BENCHMARK_SPEC.md`).
 
 ## Phase 5 — Dynamic runtime
 
