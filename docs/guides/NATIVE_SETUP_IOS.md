@@ -160,9 +160,11 @@ Check the following:
   `fallbackParses` climbs on each new value, and Metro logs a one-time
   `WF2002` (fallback used) the first time. The box's padding visibly changes
   (20pt / 28pt / 36pt).
-- **unknown token** — the `rotate-45` box intentionally cannot be resolved;
+- **unknown token** — the `grid-cols-3` box intentionally cannot be resolved;
   it appears in `unknownTokens`, and Metro logs a one-time `WF2001` (unknown
-  class) in dev.
+  class) in dev. (Phase 6 note: the original demo token was `rotate-45`,
+  which the animation work made compilable — `transform` lowering now
+  handles it.)
 - **prop mapping** — the `styled(Badge)` box renders with `className`
   resolved to `style`; the horizontal `ScrollView` below it uses
   `useWindforgeStyle('gap-3 p-3')` for its `contentContainerStyle`.
@@ -171,6 +173,43 @@ Check the following:
 
 These are the Phase 5 deliverables; build-time resolution remains the primary
 path (Home tab).
+
+## Animation screen verification (Phase 6)
+
+The Animation tab (`apps/example/src/app/animation.tsx`) exercises
+class-driven animation on the UI thread via `@windforge/reanimated`. The
+simulator deep link is `example://animation` (scheme from `app.json`):
+
+```bash
+xcrun simctl openurl booted "example://animation"
+```
+
+Check the following:
+
+- **animate-spin** — the accent box rotates continuously (Tailwind built-in
+  keyframes, 1s linear infinite).
+- **animate-spin-slow** — the emerald box rotates via the custom `@theme`
+  token `--animate-spin-slow: spin 3s linear infinite` in `global.css`,
+  proving theme-token substitution into `AnimationIR`.
+- **transition-all toggle** — tap the button: the box animates size and
+  color over 500ms ease-in-out. The caption reports the React render count
+  of the box — it must read **1 per toggle and stay still between frames**
+  (interpolation runs entirely in `useAnimatedStyle`; Rule 6).
+- **FPS line** — reads ~60 while both spins and a transition run
+  (`useFrameCallback` over a ~1s window).
+- **diagnostics row** — `resolves`/`cacheHits` climb only on toggle, never
+  per frame; `unknownTokens` shows the deliberate Dynamic-tab demos
+  (`grid-cols-3`), nothing animation-related.
+
+Reference measurements (iPhone 17 Pro simulator, dev client, 2026-08-13):
+FPS 60 with two infinite keyframes + a 500ms transition running; exactly 1
+render per toggle, 0 per frame; diagnostics flat between toggles. These
+numbers back the Phase 6 claims in `docs/IMPLEMENTATION_ROADMAP.md`.
+
+Note: on this machine the installed dev build predates the
+`dev.windforge.example` bundle identifier rename — `xcrun simctl
+listapps booted` shows the installed id (`com.vule94.example`), and
+`simctl launch` must target that id, not the one in `app.json`.
 
 ## Troubleshooting
 

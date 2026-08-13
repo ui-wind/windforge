@@ -190,6 +190,14 @@ interface AnimationBackend {
 
 No `SharedValue` type should appear in the platform-independent IR.
 
+Status (2026-08-13, Phase 6 P0): `packages/reanimated` exists with the
+compile/bindings split this boundary describes — `src/compile.ts` is a pure
+planner (`planKeyframes`/`planTransition`, easing descriptors instead of
+Reanimated objects, no reanimated import) and only `components.tsx` /
+`conditions.ts` touch Reanimated. `TransitionIR` is implemented in
+`@windforge/ir`; `EnteringIR`, `ExitingIR`, and `LayoutAnimationIR` remain
+design-only (P1 follow-up — see `docs/IMPLEMENTATION_ROADMAP.md` Phase 6).
+
 ## Component mapping
 
 All standard RN components should have automatic mapping where their `style` prop can accept the lowered output.

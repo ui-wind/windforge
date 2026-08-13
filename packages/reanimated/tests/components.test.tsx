@@ -43,6 +43,21 @@ vi.mock('react-native-reanimated', () => ({
     steps: (steps: number, roundToNextStep?: boolean) => ({ steps, roundToNextStep }),
   },
   makeMutable: (value: unknown) => ({ value }),
+  // SharedValue stand-in. Setting `.value` freezes the assigned snapshot the
+  // way reanimated freezes shareables sent to the UI thread — the component
+  // regression-tests that it never mutates a published snapshot in place
+  // (reanimated also freezes captured plain objects: issue #5430).
+  useSharedValue: (initial: unknown) => {
+    const box: { current: unknown } = { current: initial };
+    return {
+      get value() {
+        return box.current;
+      },
+      set value(next: unknown) {
+        box.current = Object.freeze(next);
+      },
+    };
+  },
   useAnimatedStyle: (updater: () => unknown) => updater(),
   withTiming: (value: unknown) => ({ withTiming: value }),
   withDelay: (_delayMs: number, animation: unknown) => animation,
@@ -107,6 +122,38 @@ const artifact: RuntimeArtifact = {
         duration: { ms: 1000 },
         timingFunction: { kind: 'linear' },
         iterationCount: 'infinite',
+      },
+    },
+    'box-a': {
+      base: [
+        { property: 'width', value: { kind: 'number', value: 80 }, sourceOrder: 0 },
+        { property: 'height', value: { kind: 'number', value: 80 }, sourceOrder: 1 },
+        {
+          property: 'backgroundColor',
+          value: { kind: 'color', value: '#3f3f46' },
+          sourceOrder: 2,
+        },
+      ],
+      transition: {
+        properties: 'all',
+        duration: { ms: 500 },
+        timingFunction: { kind: 'ease-in-out' },
+      },
+    },
+    'box-b': {
+      base: [
+        { property: 'width', value: { kind: 'number', value: 128 }, sourceOrder: 0 },
+        { property: 'height', value: { kind: 'number', value: 128 }, sourceOrder: 1 },
+        {
+          property: 'backgroundColor',
+          value: { kind: 'color', value: '#3b82f6' },
+          sourceOrder: 2,
+        },
+      ],
+      transition: {
+        properties: 'all',
+        duration: { ms: 500 },
+        timingFunction: { kind: 'ease-in-out' },
       },
     },
   },
@@ -193,5 +240,32 @@ describe('animated styled primitives', () => {
     });
     const host = renderer.root.findByType('AnimatedText' as never);
     expect((host.props.style as unknown[])[0]).toEqual({ padding: 16 });
+  });
+
+  it('survives transition toggles against frozen snapshots (reanimated #5430)', () => {
+    // Reanimated deep-freezes every plain object a worklet captures. The
+    // SharedValue collection therefore rides a SharedValue snapshot, and the
+    // mock freezes every published snapshot on assignment: any code path that
+    // mutated a published snapshot in place would throw here. The original
+    // bug threw "cannot add a new property" on the first className toggle.
+    let renderer!: ReturnType<typeof create>;
+    act(() => {
+      renderer = create(createElement(AnimatedView, { className: 'box-a' }));
+    });
+    expect(() => {
+      act(() => {
+        renderer.update(createElement(AnimatedView, { className: 'box-b' }));
+      });
+      act(() => {
+        renderer.update(createElement(AnimatedView, { className: 'box-a' }));
+      });
+    }).not.toThrow();
+    const style = renderer.root.findByType('AnimatedView' as never).props.style as unknown[];
+    // The animated style carries one SV-backed entry per transitioning
+    // property (mock SVs surface the last value written).
+    const animated = style[1] as Record<string, unknown>;
+    expect(Object.keys(animated).sort()).toEqual(['backgroundColor', 'height', 'width']);
+    // Base style snaps to the new class values; interpolation rides style[1].
+    expect(style[0]).toEqual({ width: 80, height: 80, backgroundColor: '#3f3f46' });
   });
 });

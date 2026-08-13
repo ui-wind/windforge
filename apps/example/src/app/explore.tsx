@@ -10,7 +10,7 @@
  *  - styled() on a third-party-shaped component and useWindforgeStyle() feeding
  *    a plain RN ScrollView's contentContainerStyle (prop mapping);
  *  - a live diagnostics panel showing fallbackParses climb and an intentionally
- *    unknown token (`rotate-45`, WF2001).
+ *    unknown token (`grid-cols-3`, WF2001).
  */
 import { useEffect, useState, type ReactNode } from 'react';
 import {
@@ -159,9 +159,9 @@ export default function DynamicScreen() {
           </ScrollView>
 
           {/* Unknown token on purpose → WF2001 diagnostic. */}
-          <View className="mt-3 rounded-lg bg-zinc-800 dark:bg-zinc-800 p-3 rotate-45">
+          <View className="mt-3 rounded-lg bg-zinc-800 dark:bg-zinc-800 p-3 grid-cols-3">
             <Text className="text-xs text-zinc-400 dark:text-zinc-500">
-              rotate-45 is intentionally unsupported → appears in unknownTokens.
+              grid-cols-3 is intentionally unsupported → appears in unknownTokens.
             </Text>
           </View>
 

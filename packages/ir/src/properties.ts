@@ -53,6 +53,8 @@ export const KNOWN_CANONICAL_PROPERTIES = [
   'marginLeft',
   'marginBlock',
   'marginInline',
+  'marginHorizontal',
+  'marginVertical',
   'padding',
   'paddingTop',
   'paddingRight',
@@ -60,6 +62,8 @@ export const KNOWN_CANONICAL_PROPERTIES = [
   'paddingLeft',
   'paddingBlock',
   'paddingInline',
+  'paddingHorizontal',
+  'paddingVertical',
   'overflow',
   // borders
   'borderWidth',

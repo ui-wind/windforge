@@ -12,6 +12,13 @@
  * - `style = [baseResolved, animatedStyle, userStyle]` — user style still
  *   wins (Phase 5 escape hatch).
  *
+ * Reanimated deep-freezes every plain object a worklet captures
+ * (software-mansion/react-native-reanimated#5430), so the SharedValue
+ * collection must never be captured directly — the `useAnimatedStyle` below
+ * reads it from a SharedValue snapshot, the one mutable channel the freeze
+ * does not touch. The JS-thread registry stays a plain object (effects only);
+ * every mutation publishes a fresh snapshot.
+ *
  * Fabric: animated components deliberately do NOT link through the native
  * delivery protocol — suspend is whole-node only, and animated nodes need
  * per-property ownership that does not exist yet (decision record in the
@@ -35,6 +42,7 @@ import Animated, {
   Easing,
   makeMutable,
   useAnimatedStyle,
+  useSharedValue,
   withDelay,
   withRepeat,
   withSequence,
@@ -77,6 +85,22 @@ type SVRegistry = {
 
 function createRegistry(): SVRegistry {
   return { scalars: {}, transforms: [], keyframeKeys: new Set() };
+}
+
+/**
+ * Worklet-facing view of the registry: plain-data collections whose entries
+ * are SharedValues. Reanimated freezes captured plain objects (#5430), so the
+ * worklet reads this snapshot from a SharedValue (the mutable channel) rather
+ * than capturing the registry itself. Fresh objects are cheap — key sets
+ * change at most once per className toggle.
+ */
+type SVRegistrySnapshot = {
+  scalars: Record<string, SharedValue<Scalar>>;
+  transforms: TransformOpEntry[];
+};
+
+function publishRegistry(sv: SharedValue<SVRegistrySnapshot>, registry: SVRegistry): void {
+  sv.value = { scalars: { ...registry.scalars }, transforms: [...registry.transforms] };
 }
 
 function descriptorToEasing(descriptor: EasingDescriptor): EasingFunction | EasingFunctionFactory {
@@ -243,17 +267,24 @@ function useWindforgeAnimated(
   const registryRef = useRef<SVRegistry | null>(null);
   if (registryRef.current === null) registryRef.current = createRegistry();
   const registry = registryRef.current;
+  // Snapshot shared with the worklet (see SVRegistrySnapshot). useSharedValue
+  // keeps the initial object across renders — only the effects republish.
+  const registrySV = useSharedValue<SVRegistrySnapshot>({
+    scalars: { ...registry.scalars },
+    transforms: [...registry.transforms],
+  });
 
   // Keyframes: start once per animation identity; SVs persist across renders.
   useEffect(() => {
     if (!animation) {
       clearKeyframeSVs(registry);
-      return;
+    } else {
+      const plan = planKeyframes(animation);
+      for (const propertyPlan of plan.properties) {
+        startKeyframeProperty(registry, plan, propertyPlan, resolved);
+      }
     }
-    const plan = planKeyframes(animation);
-    for (const propertyPlan of plan.properties) {
-      startKeyframeProperty(registry, plan, propertyPlan, resolved);
-    }
+    publishRegistry(registrySV, registry);
     // `resolved` is only read for initial scalar values at start.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [animation]);
@@ -269,6 +300,7 @@ function useWindforgeAnimated(
       for (const key of Object.keys(registry.scalars)) {
         if (!registry.keyframeKeys.has(key)) delete registry.scalars[key];
       }
+      publishRegistry(registrySV, registry);
       return;
     }
     const plan = planTransition(transition, prev, resolved);
@@ -291,13 +323,15 @@ function useWindforgeAnimated(
         }),
       );
     }
+    publishRegistry(registrySV, registry);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resolved, transition]);
 
   const animatedStyle = useAnimatedStyle(() => {
+    // Read through the SharedValue snapshot — never capture `registry` itself
+    // (reanimated freezes captured plain objects; see module note).
     const result: Record<string, unknown> = {};
-    const current = registryRef.current;
-    if (!current) return result;
+    const current = registrySV.value;
     for (const key of Object.keys(current.scalars)) {
       const sv = current.scalars[key];
       if (sv) result[key] = sv.value;

@@ -3,6 +3,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { buildArtifact } from '../src/artifact.js';
+import { compileTailwindCss } from '../src/compile.js';
 import { generate } from '../src/index.js';
 import { scanCandidates } from '../src/scan.js';
 
@@ -188,5 +189,159 @@ describe('buildArtifact (direct CSS input)', () => {
       'media-width:>=:640',
     ]);
     expect(artifact.dependencies['plain']).toEqual([]);
+  });
+});
+
+async function buildUtilities(candidates: string[]) {
+  const { css } = await compileTailwindCss(ENTRY, new Set(candidates));
+  return buildArtifact(css, 1);
+}
+
+describe('layout keyword lowering (lightningcss typed enums)', () => {
+  it('lowers alignment utilities from typed enum values', async () => {
+    const { artifact, diagnostics } = await buildUtilities([
+      'items-center',
+      'justify-between',
+      'justify-center',
+      'self-stretch',
+      'text-center',
+    ]);
+    expect(diagnostics).toEqual([]);
+    expect(findProperty(artifact.styles['items-center'].base, 'alignItems')?.value).toEqual({
+      kind: 'string',
+      value: 'center',
+    });
+    expect(findProperty(artifact.styles['justify-between'].base, 'justifyContent')?.value).toEqual({
+      kind: 'string',
+      value: 'space-between',
+    });
+    expect(findProperty(artifact.styles['justify-center'].base, 'justifyContent')?.value).toEqual({
+      kind: 'string',
+      value: 'center',
+    });
+    expect(findProperty(artifact.styles['self-stretch'].base, 'alignSelf')?.value).toEqual({
+      kind: 'string',
+      value: 'stretch',
+    });
+    expect(findProperty(artifact.styles['text-center'].base, 'textAlign')?.value).toEqual({
+      kind: 'string',
+      value: 'center',
+    });
+  });
+
+  it('lowers display/position/flex-direction/wrap/font-style enums', async () => {
+    const { artifact, diagnostics } = await buildUtilities([
+      'hidden',
+      'absolute',
+      'relative',
+      'flex-col',
+      'flex-wrap',
+      'italic',
+    ]);
+    expect(diagnostics).toEqual([]);
+    expect(findProperty(artifact.styles['hidden'].base, 'display')?.value).toEqual({
+      kind: 'string',
+      value: 'none',
+    });
+    expect(findProperty(artifact.styles['absolute'].base, 'position')?.value).toEqual({
+      kind: 'string',
+      value: 'absolute',
+    });
+    expect(findProperty(artifact.styles['relative'].base, 'position')?.value).toEqual({
+      kind: 'string',
+      value: 'relative',
+    });
+    expect(findProperty(artifact.styles['flex-col'].base, 'flexDirection')?.value).toEqual({
+      kind: 'string',
+      value: 'column',
+    });
+    expect(findProperty(artifact.styles['flex-wrap'].base, 'flexWrap')?.value).toEqual({
+      kind: 'string',
+      value: 'wrap',
+    });
+    expect(findProperty(artifact.styles['italic'].base, 'fontStyle')?.value).toEqual({
+      kind: 'string',
+      value: 'italic',
+    });
+  });
+
+  it('maps bare start/end alignment to the flex keywords RN accepts', () => {
+    // Hand-written CSS: `align-items: start` arrives as a bare keyword that
+    // React Native does not accept — RN wants flex-start/flex-end.
+    const css = `
+      .a { align-items: start; }
+      .b { justify-content: end; }
+    `;
+    const { artifact, diagnostics } = buildArtifact(css, 1);
+    expect(diagnostics).toEqual([]);
+    expect(findProperty(artifact.styles['a'].base, 'alignItems')?.value).toEqual({
+      kind: 'string',
+      value: 'flex-start',
+    });
+    expect(findProperty(artifact.styles['b'].base, 'justifyContent')?.value).toEqual({
+      kind: 'string',
+      value: 'flex-end',
+    });
+  });
+
+  it('still reports WF1005 for complex enum shapes', () => {
+    // border-style arrives as a per-side object and text-transform as a case
+    // object — neither has a safe static single-value lowering yet.
+    const css = `
+      .a { border-style: solid; }
+      .b { text-transform: uppercase; }
+    `;
+    const { artifact, diagnostics } = buildArtifact(css, 1);
+    expect(artifact.styles['a']).toBeUndefined();
+    expect(artifact.styles['b']).toBeUndefined();
+    expect(diagnostics.filter((d) => d.code === 'WF1005')).toHaveLength(2);
+  });
+});
+
+describe('logical box shorthands (px-*/py-*/mx-*/my-*)', () => {
+  it('lowers axis shorthands to RN axis properties', async () => {
+    const { artifact, diagnostics } = await buildUtilities(['px-6', 'py-3', 'mx-4', 'my-2']);
+    expect(diagnostics).toEqual([]);
+    expect(findProperty(artifact.styles['px-6'].base, 'paddingHorizontal')?.value).toEqual({
+      kind: 'number',
+      value: 24,
+    });
+    expect(findProperty(artifact.styles['py-3'].base, 'paddingVertical')?.value).toEqual({
+      kind: 'number',
+      value: 12,
+    });
+    expect(findProperty(artifact.styles['mx-4'].base, 'marginHorizontal')?.value).toEqual({
+      kind: 'number',
+      value: 16,
+    });
+    expect(findProperty(artifact.styles['my-2'].base, 'marginVertical')?.value).toEqual({
+      kind: 'number',
+      value: 8,
+    });
+  });
+
+  it('falls back to physical longhands when sides differ', () => {
+    const css = `
+      .a { padding-inline: 8px 12px; }
+      .b { margin-block: 4px 6px; }
+    `;
+    const { artifact, diagnostics } = buildArtifact(css, 1);
+    expect(diagnostics).toEqual([]);
+    expect(findProperty(artifact.styles['a'].base, 'paddingLeft')?.value).toEqual({
+      kind: 'number',
+      value: 8,
+    });
+    expect(findProperty(artifact.styles['a'].base, 'paddingRight')?.value).toEqual({
+      kind: 'number',
+      value: 12,
+    });
+    expect(findProperty(artifact.styles['b'].base, 'marginTop')?.value).toEqual({
+      kind: 'number',
+      value: 4,
+    });
+    expect(findProperty(artifact.styles['b'].base, 'marginBottom')?.value).toEqual({
+      kind: 'number',
+      value: 6,
+    });
   });
 });

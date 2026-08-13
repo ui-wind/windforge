@@ -218,19 +218,106 @@ These are the Phase 5 decision records (Rule 13).
 Demo: `apps/example/src/app/explore.tsx` (Dynamic tab). Verification runbook:
 `docs/guides/NATIVE_SETUP_IOS.md`.
 
-## Phase 6 — Reanimated
+## Phase 6 — Reanimated (P0) ✅
 
-Implement:
+Goal: class-driven keyframes and transitions on the UI thread via Reanimated 4,
+with the compiler independent of Reanimated and zero React renders per frame.
+Scope agreed up front: P0 (animate-*, transition-*, transform, animated
+primitives, shared-value mirror, frame/render benchmarks); entering/exiting/
+layout classes are a separate P1 follow-up.
 
-- animation IR
-- transition IR
-- animate-* support
-- keyframes
-- class-driven Reanimated 4 integration
-- shared value integration
-- entering/exiting/layout animation paths
+Done:
 
-Benchmark frame stability and React render counts.
+- ✅ `TransitionIR` in `@windforge/ir` (`properties: 'all' | canonical[]`,
+  duration/delay/timingFunction) — descriptive only, no Reanimated types
+  (Rule 2).
+- ✅ Tailwind frontend: `@keyframes` collection (previously dropped silently),
+  `transform` lowering (translate/scale/rotate ops — `rotate-45` now compiles),
+  `transition-*` longhands → `TransitionIR` (per-field last-wins), `animation`
+  shorthand/longhands → `AnimationIR` with `var(--animate-*)` theme
+  substitution; unknown `@keyframes` name → WF1006, the class keeps its static
+  declarations.
+- ✅ Runtime accessor `resolveAnimationMeta(className)` — composed-string
+  semantics like `resolveStyle`: `animation` replaces wholesale, `transition`
+  merges per field (later token wins per field), flyweight-cached.
+- ✅ New package `@windforge/reanimated`:
+  - `compile.ts` — pure planner, no Reanimated import: `planKeyframes`
+    (per-segment CSS offset math, alternate/reverse, infinite) and
+    `planTransition` (covered + animatable diffs animate, the rest snap),
+    node-testable.
+  - `components.tsx` — `AnimatedView/Text/Image/Pressable` opt-in primitives;
+    `style = [resolved, animatedStyle, userStyle]`; keyframes attach
+    `withDelay(withRepeat(withSequence(withTiming(...))))` once per animation
+    identity; transitions reuse mid-flight SharedValues so interrupts retime
+    from the current value.
+  - `conditions.ts` — `useAnimatedConditionState()`: SharedValue mirror of the
+    condition store (subscribe + dispose), pattern prior art from unistyles
+    `useAnimatedTheme` (MIT; pattern referenced, nothing copied).
+- ✅ Lowering fixes uncovered while building the demo: layout keywords from
+  lightningcss typed enums (`align-items`/`justify-content`/`display`/
+  `position`/`flex-*`/`italic`/`text-align`, bare `start`/`end` →
+  `flex-start`/`flex-end`) and logical box shorthands `px-*`/`py-*`/`mx-*`/
+  `my-*` → `paddingHorizontal` and friends (two-value forms fall back to
+  physical longhands).
+- ✅ Example Animation screen (`apps/example/src/app/animation.tsx`):
+  `animate-spin` (built-in), `animate-spin-slow` (custom `@theme` token),
+  `transition-all duration-500 ease-in-out` ternary toggle, live FPS via
+  `useFrameCallback`, per-toggle render counter, diagnostics row.
+
+Measured on the iOS simulator (iPhone 17 Pro, dev client, Metro dev bundle),
+Rule 11:
+
+| measurement | result |
+| --- | --- |
+| FPS while two infinite keyframes + a 500ms transition run | 60 (useFrameCallback ~1s window) |
+| React renders of the transition box | 1 per className toggle, 0 per frame (counter still at 1 while idle; +1 per toggle under a 2s auto-toggle loop) |
+| runtime diagnostics during animation | stable (resolves/cacheHits flat between toggles; no growth per frame) |
+
+Scope notes:
+
+- entering/exiting/layout animation classes = P1 follow-up (parity matrix rows
+  stay P1).
+- No runtime parser for animation strings (Rule 9): animation/transition
+  metadata comes only from the build path; `animate-[...]` arbitrary values
+  surface as WF2001.
+- Android not exercised this phase (iOS-only verification, same as Phases 4–5).
+
+### Decisions
+
+These are the Phase 6 decision records (Rule 13).
+
+- **Animated components subscribe, they do not fabric-link.** The native
+  delivery protocol's only coordination primitive is whole-node `suspend`;
+  animated nodes need per-property ownership that does not exist yet.
+  Animated primitives always `useConditionState(true)` and re-render on
+  condition flips; per-property suspend/ownership is the follow-up
+  (`docs/specs/NATIVE_DELIVERY_PROTOCOL_SPEC.md`).
+- **Per-property SharedValues.** `sv.value.prop = withTiming(...)` does not
+  animate (reanimated limitation), so each animating property gets its own
+  SharedValue; transforms get one SharedValue per operation axis.
+- **The SV collection rides a SharedValue snapshot — worklet-capture freeze.**
+  Reanimated deep-freezes every plain object a worklet captures
+  (software-mansion/react-native-reanimated#5430, intended behavior). The
+  first className toggle adds a scalar key to the registry and threw
+  `TypeError: cannot add a new property` while the registry was captured by
+  `useAnimatedStyle`. Fix: the JS-thread registry stays a plain mutable object
+  (effects only, never captured); the worklet reads a snapshot published
+  through `useSharedValue`, re-published (fresh identity) on every key-set
+  change. SharedValues are the one mutable channel the freeze does not touch.
+  Regression-tested in `components.test.tsx` (the mock freezes every published
+  snapshot on assignment).
+- **`compile.ts` is pure.** The planner emits easing descriptors, not Reanimated
+  objects — the compiler stays independent of Reanimated
+  (`docs/specs/REANIMATED_INTEGRATION_SPEC.md`) and the math is node-testable.
+- **WF1006 range.** WF1xxx = frontend: unresolvable `@keyframes` reference or
+  non-lowerable keyframe declaration (the declaration is dropped, the rest of
+  the class survives).
+- **`useAnimatedConditionState` mirrors unistyles' `useAnimatedTheme` pattern**
+  (SharedValue mirror synced by store subscription, disposed in effect
+  cleanup) — prior art referenced from the MIT repo, no code copied.
+
+Demo: `apps/example/src/app/animation.tsx` (Animation tab). Verification
+runbook: `docs/guides/NATIVE_SETUP_IOS.md`.
 
 ## Phase 7 — Native metrics/theme transitions
 

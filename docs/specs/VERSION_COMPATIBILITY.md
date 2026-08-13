@@ -2,10 +2,14 @@
 
 ## Current development baseline
 
-- React Native: 0.86 baseline
+- React Native: 0.86 baseline (example: 0.86.2)
 - Expo SDK: 57 baseline
 - New Architecture: required
-- Reanimated: current version compatible with the baseline
+- Reanimated: `react-native-reanimated ^4.5` (example: 4.5.1) with
+  `react-native-worklets ^0.10` (example: 0.10.1) — declared as the peer
+  ranges of `@windforge/reanimated` and verified against its
+  `package.json`; the adapter is optional (only `@windforge/reanimated`
+  depends on it, the compiler/runtime do not)
 
 Exact package ranges must be verified during release rather than guessed.
 
@@ -15,7 +19,7 @@ Track at least:
 
 | Windforge | RN | Expo | Reanimated | Nitro | New Arch |
 |---|---|---|---|---|---|
-| development | 0.86 | SDK 57 | verified version | optional/verified | required |
+| development | 0.86 (`>=0.83 <0.87`) | SDK 57 | `^4.5` + worklets `^0.10` (verified 4.5.1/0.10.1) | optional/verified | required |
 
 ## Native adapter rule
 

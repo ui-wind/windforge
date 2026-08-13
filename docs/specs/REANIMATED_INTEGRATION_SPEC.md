@@ -6,6 +6,35 @@ Make animation a first-class styling capability while keeping the core compiler 
 
 Current target: Reanimated 4-compatible architecture.
 
+## Status (2026-08-13, Phase 6 P0)
+
+Implemented — see `docs/IMPLEMENTATION_ROADMAP.md` Phase 6 for the full
+record:
+
+- Compiler independence is structural: `AnimationIR`/`TransitionIR` in
+  `@windforge/ir` carry no Reanimated types (architecture Rule 2), and the
+  planner in `packages/reanimated/src/compile.ts` is a pure module that emits
+  easing descriptors instead of Reanimated objects — only
+  `components.tsx`/`conditions.ts` import Reanimated.
+- Static animation (`animate-*`) and transition (`transition-*`,
+  `duration-*`, `ease-*`, `delay-*`) classes compile to animation metadata in
+  the artifact and drive `AnimatedView/Text/Image/Pressable` from
+  `@windforge/reanimated`. Arbitrary values (`animate-[...]`) are build-path
+  only; there is no runtime animation parser (architecture Rule 9 — a runtime
+  parser would need its own cache/benchmark story before it exists).
+- One worklet-capture constraint shapes the binding: Reanimated deep-freezes
+  every plain object a worklet captures
+  (software-mansion/react-native-reanimated#5430, intended behavior). The
+  SharedValue collection therefore rides a SharedValue snapshot that the
+  effects republish with fresh identity on every key-set change; the
+  JS-thread registry is never captured by the worklet. Regression-tested in
+  `packages/reanimated/tests/components.test.tsx` (the mock freezes every
+  published snapshot on assignment).
+- Lifecycle states: active state and transition are done (P0). mount/entering,
+  exiting, and layout change are the P1 follow-up; theme transition rides
+  `useAnimatedConditionState` (SharedValue mirror of the condition store).
+- Compatibility ranges: `docs/guides/VERSION_COMPATIBILITY.md`.
+
 ## Architecture
 
 ```text

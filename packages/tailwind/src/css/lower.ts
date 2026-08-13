@@ -168,6 +168,10 @@ const BOX_SHORTHAND_PROPERTIES = new Set([
   'border-width',
   'border-radius',
   'gap',
+  'padding-inline',
+  'padding-block',
+  'margin-inline',
+  'margin-block',
 ]);
 
 function synthesizeTypedValue(
@@ -196,6 +200,12 @@ function synthesizeTypedValue(
       return { topLeft: side, topRight: side, bottomRight: side, bottomLeft: side };
     case 'gap':
       return { row: side, column: side };
+    case 'padding-inline':
+    case 'margin-inline':
+      return { inlineStart: side, inlineEnd: side };
+    case 'padding-block':
+    case 'margin-block':
+      return { blockStart: side, blockEnd: side };
     default:
       return side;
   }
@@ -226,6 +236,63 @@ function typedIdent(value: AnyRecord): string | null {
   }
   return null;
 }
+
+/** lightningcss enums whose `.type` discriminator is itself the CSS keyword
+ * (e.g. `position: absolute` → `{type:'absolute'}`, `align-self: stretch` →
+ * `{type:'stretch'}`). Values not in this set are not lowered from `.type`. */
+const TYPE_AS_KEYWORD_ENUMS = new Set([
+  'auto',
+  'baseline',
+  'normal',
+  'stretch',
+  'static',
+  'relative',
+  'absolute',
+  'fixed',
+  'sticky',
+  'italic',
+]);
+
+/** Extract a CSS keyword from lightningcss's typed value shapes.
+ *
+ * Keyword properties arrive in four shapes: bare strings
+ * (`flex-direction: column`), `{type:'ident'}` wrappers, typed enums that
+ * carry the keyword in `.value` (`align-items` → self-position,
+ * `justify-content` → content-distribution/content-position,
+ * `display: none` → `{type:'keyword', value:'none'}`), and enums whose `.type`
+ * is the keyword itself. Complex shapes we don't statically lower (display's
+ * `pair`, text-transform's case object, border-style's per-side object) return
+ * null so the caller reports WF1005. */
+function typedKeyword(value: unknown): string | null {
+  if (typeof value === 'string') return value;
+  if (!value || typeof value !== 'object') return null;
+  const record = value as AnyRecord;
+  const ident = typedIdent(record);
+  if (ident !== null) return ident;
+  if (
+    (record.type === 'self-position' ||
+      record.type === 'content-distribution' ||
+      record.type === 'content-position' ||
+      record.type === 'keyword') &&
+    typeof record.value === 'string'
+  ) {
+    return record.value;
+  }
+  if (typeof record.type === 'string' && TYPE_AS_KEYWORD_ENUMS.has(record.type)) {
+    return record.type;
+  }
+  return null;
+}
+
+/** Alignment targets that need CSS `start`/`end` mapped to the flex keywords
+ * React Native accepts (hand-written `align-items: start`; Tailwind utilities
+ * already emit flex-start/flex-end). */
+const ALIGNMENT_KEYWORD_TARGETS = new Set([
+  'alignItems',
+  'alignContent',
+  'alignSelf',
+  'justifyContent',
+]);
 
 /** Extract a px value from a typed length-percentage. Percentages return null. */
 function typedLengthPx(value: AnyRecord): number | null {
@@ -954,6 +1021,39 @@ export function lowerDeclaration(
           : ['marginTop', 'marginRight', 'marginBottom', 'marginLeft'];
       return lowerBox(typed, shorthand, sides, ctx, property);
     }
+    if (
+      property === 'padding-inline' ||
+      property === 'padding-block' ||
+      property === 'margin-inline' ||
+      property === 'margin-block'
+    ) {
+      // Logical axis shorthands (Tailwind px-*/py-*/mx-*/my-*). RN's axis
+      // keys assume LTR order, which is how the example apps layout.
+      const prefix = property.startsWith('padding') ? 'padding' : 'margin';
+      const start = lowerBoxValue(typed.inlineStart ?? typed.blockStart);
+      const end = lowerBoxValue(typed.inlineEnd ?? typed.blockEnd);
+      if (start === null || end === null) return [];
+      if (!sameValue(start, end)) {
+        // Unequal start/end → physical longhands (LTR order).
+        return property.endsWith('inline')
+          ? [
+              { property: `${prefix}Left`, value: start },
+              { property: `${prefix}Right`, value: end },
+            ]
+          : [
+              { property: `${prefix}Top`, value: start },
+              { property: `${prefix}Bottom`, value: end },
+            ];
+      }
+      const target: CanonicalProperty = property.endsWith('inline')
+        ? prefix === 'padding'
+          ? 'paddingHorizontal'
+          : 'marginHorizontal'
+        : prefix === 'padding'
+          ? 'paddingVertical'
+          : 'marginVertical';
+      return [{ property: target, value: start }];
+    }
     if (property === 'border-width') {
       return lowerBox(
         typed,
@@ -1083,7 +1183,11 @@ export function lowerDeclaration(
       return [{ property: mapping.target, value: { kind: 'number', value: roundPx(num) } }];
     }
     case 'keyword': {
-      const ident = typedIdent(typed);
+      let ident = typedKeyword(typed);
+      if (ident !== null && ALIGNMENT_KEYWORD_TARGETS.has(mapping.target)) {
+        if (ident === 'start') ident = 'flex-start';
+        else if (ident === 'end') ident = 'flex-end';
+      }
       if (ident === null) {
         ctx.diagnostics.push({
           code: 'WF1005',

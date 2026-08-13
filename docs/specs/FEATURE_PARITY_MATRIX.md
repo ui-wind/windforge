@@ -57,16 +57,16 @@ Legend:
 
 | Feature | Priority | Notes |
 |---|---:|---|
-| Animated.View className | P0 | Reanimated 4 |
-| animate-* | P0 | Tailwind animation classes |
-| transition-* | P0 | Property transitions |
+| Animated.View className | P0 | Reanimated 4 (Phase 6: AnimatedView/Text/Image/Pressable from @windforge/reanimated) |
+| animate-* | P0 | Tailwind animation classes (Phase 6: AnimationIR + keyframes lowering, build path only) |
+| transition-* | P0 | Property transitions (Phase 6: TransitionIR + planTransition) |
 | arbitrary keyframes | P1 | Compiler → animation IR |
-| entering classes | P1 | Reanimated entering builders |
-| exiting classes | P1 | Reanimated exiting builders |
-| layout classes | P1 | Reanimated layout transitions |
+| entering classes | P1 | Reanimated entering builders (Phase 6 follow-up) |
+| exiting classes | P1 | Reanimated exiting builders (Phase 6 follow-up) |
+| layout classes | P1 | Reanimated layout transitions (Phase 6 follow-up) |
 | auto Animated component upgrade | P1 | Common RN primitives |
-| SharedValue integration | P1 | UI-thread path |
-| worklet-safe style representation | P0 | No React render per frame |
+| SharedValue integration | P1 | UI-thread path (Phase 6: useAnimatedConditionState mirror; deep binding into style resolution deferred) |
+| worklet-safe style representation | P0 | No React render per frame (Phase 6: measured 1 render per toggle, 0 per frame; SV snapshot vs. reanimated #5430 freeze) |
 | animated theme transition | P1 | Native/UI thread target |
 
 ## Web

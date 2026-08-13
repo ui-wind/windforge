@@ -2,6 +2,16 @@
 
 @theme {
   --color-accent: #3b82f6;
+
+  /* Custom animation token: `animate-spin-slow` (3s spin, reuses the `spin`
+     keyframes below — the Tailwind built-in animate-spin uses its own). */
+  --animate-spin-slow: spin 3s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @custom-variant ios (@media (platform: ios));
