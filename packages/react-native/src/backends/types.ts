@@ -17,7 +17,12 @@
 import type { ReactNativeStyle } from '../resolve.js';
 import type { ConditionState } from '../state.js';
 
-export type StyleBackendName = 'js-baseline' | 'fabric';
+/**
+ * Built-in backend names. Widened with `(string & {})` so custom backends
+ * (installed via `setBackend`) keep autocomplete for the built-ins while
+ * accepting any name.
+ */
+export type StyleBackendName = 'js-baseline' | 'fabric' | (string & {});
 
 /** Opaque native handle for a mounted host node (Fabric tag in production). */
 export type StyleHandle = number;

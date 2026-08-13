@@ -17,7 +17,7 @@ export {
   type ViewProps,
 } from './components.js';
 export { evaluateCondition } from './conditions.js';
-export { __resetBackend, getBackend, selectBackend } from './backends/index.js';
+export { __resetBackend, getBackend, selectBackend, setBackend } from './backends/index.js';
 export {
   setFabricNativeAdapter,
   type NativeStyleAdapter,

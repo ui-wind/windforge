@@ -1,5 +1,8 @@
-import React from 'react';
-
+/** Fixture source for compileWindforge tests. */
 export function App() {
-  return <div className="flex-1 bg-zinc-950 p-4 text-lg" />;
+  return (
+    <div className="glass bg-brand p-4 land:bg-emerald-500">
+      extension-driven classes
+    </div>
+  );
 }

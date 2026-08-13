@@ -7,6 +7,11 @@ export {
 } from './compiler.js';
 export type { MetroConfigLike, WindforgeMetroConfig } from './config.js';
 export {
+  validateFrontendArtifact,
+  type WindforgeFrontend,
+  type WindforgeFrontendContext,
+} from './frontend.js';
+export {
   windforgeResolveRequest,
   type ResolutionLike,
   type ResolverContextLike,

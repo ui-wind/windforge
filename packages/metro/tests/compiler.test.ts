@@ -1,115 +1,164 @@
-import { existsSync, readFileSync } from 'node:fs';
-import { mkdtemp, rm } from 'node:fs/promises';
+/**
+ * compileWindforge — extension injection and the custom frontend interface.
+ */
+import { defineTokens, defineUtility, defineVariant } from '@windforge/extension-sdk';
+import type { RuntimeArtifact } from '@windforge/tailwind';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
-import { compileWindforge } from '../src/compiler.js';
-import { windforgeResolveRequest } from '../src/resolver.js';
-import type { ResolverContextLike } from '../src/resolver.js';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { afterAll, describe, expect, it } from 'vitest';
+import { compileWindforge } from '../src/index.js';
 
-const FIXTURE_ENTRY = resolve(__dirname, 'fixtures/app/src/global.css');
+const FIXTURE = resolve(dirname(fileURLToPath(import.meta.url)), 'fixtures/app');
+const ENTRY = resolve(FIXTURE, 'src/global.css');
 
-let tempDirs: string[] = [];
-
-async function makeTempDir(): Promise<string> {
-  const dir = await mkdtemp(join(tmpdir(), 'windforge-metro-'));
+const tempDirs: string[] = [];
+async function tempOutputDir(): Promise<string> {
+  const dir = await mkdtemp(resolve(tmpdir(), 'windforge-metro-'));
   tempDirs.push(dir);
   return dir;
 }
 
-afterEach(async () => {
+afterAll(async () => {
   await Promise.all(tempDirs.map((dir) => rm(dir, { recursive: true, force: true })));
-  tempDirs = [];
 });
+
+function customArtifact(overrides: Partial<RuntimeArtifact> = {}): RuntimeArtifact {
+  return {
+    version: 1,
+    irVersion: 1,
+    hash: 'frontend01',
+    styles: {
+      'p-custom': {
+        base: [{ property: 'padding', value: { kind: 'number', value: 12 }, priority: 10, sourceOrder: 0 }],
+      },
+    },
+    conditions: [],
+    dependencies: { 'p-custom': [] },
+    ...overrides,
+  };
+}
 
 describe('compileWindforge', () => {
-  it('writes generated.js registering the artifact', async () => {
-    const outputDir = await makeTempDir();
-    const result = await compileWindforge({
-      entry: FIXTURE_ENTRY,
-      base: resolve(__dirname, 'fixtures/app'),
+  it('writes a single-artifact module without extensions', async () => {
+    const outputDir = await tempOutputDir();
+    const { outputFile, hash, hashes } = await compileWindforge({
+      entry: ENTRY,
+      base: FIXTURE,
       outputDir,
       diagnostics: false,
     });
-
-    expect(existsSync(result.outputFile)).toBe(true);
-    expect(result.outputFile.endsWith('generated.js')).toBe(true);
-    expect(result.hash).toMatch(/^[0-9a-f]{8}$/);
-
-    const contents = readFileSync(result.outputFile, 'utf8');
-    expect(contents).toContain('registerArtifact');
-    expect(contents).toContain('"p-4"');
-    expect(contents).toContain('"backgroundColor"');
+    const content = await readFile(outputFile, 'utf8');
+    expect(outputFile).toContain('generated.js');
+    expect(content).toContain('import { registerArtifact }');
+    expect(content.match(/registerArtifact\(/g)).toHaveLength(1);
+    expect(content).toContain('"p-4"');
+    expect(hashes).toEqual([hash]);
   });
 
-  it('is deterministic across runs', async () => {
-    const outputDir = await makeTempDir();
-    const first = await compileWindforge({
-      entry: FIXTURE_ENTRY,
-      base: resolve(__dirname, 'fixtures/app'),
+  it('injects extension descriptors as CSS (utility, tokens, variant)', async () => {
+    const outputDir = await tempOutputDir();
+    const baseline = await compileWindforge({
+      entry: ENTRY,
+      base: FIXTURE,
       outputDir,
       diagnostics: false,
     });
-    const second = await compileWindforge({
-      entry: FIXTURE_ENTRY,
-      base: resolve(__dirname, 'fixtures/app'),
+    const { hash, hashes, diagnostics } = await compileWindforge({
+      entry: ENTRY,
+      base: FIXTURE,
       outputDir,
       diagnostics: false,
+      extensions: [
+        defineUtility({ name: 'glass', css: 'opacity: 0.8;' }),
+        defineTokens({ colors: { brand: '#22c55e' } }),
+        defineVariant({ name: 'land', media: '(orientation: landscape)' }),
+      ],
     });
-    expect(first.hash).toBe(second.hash);
-    expect(readFileSync(first.outputFile, 'utf8')).toBe(
-      readFileSync(second.outputFile, 'utf8'),
-    );
-  });
-});
+    expect(diagnostics).toEqual([]);
+    expect(hash).not.toBe(baseline.hash);
+    expect(hashes).toEqual([hash]);
 
-describe('windforgeResolveRequest', () => {
-  function makeContext(
-    fallback: (name: string) => string,
-  ): ResolverContextLike {
-    const context = {
-      resolveRequest: (ctx: ResolverContextLike, moduleName: string) =>
-        ({ type: 'sourceFile', filePath: fallback(moduleName) }) as {
-          type: string;
-          filePath: string;
+    const content = await readFile(baseline.outputFile, 'utf8');
+    expect(content).toContain('"glass"');
+    expect(content).toContain('"bg-brand"');
+    expect(content).toContain('"land:bg-emerald-500"');
+    expect(content).toContain('orientation:landscape');
+  });
+
+  it('reports WF3xxx diagnostics and keeps valid extensions', async () => {
+    const outputDir = await tempOutputDir();
+    const { diagnostics } = await compileWindforge({
+      entry: ENTRY,
+      base: FIXTURE,
+      outputDir,
+      diagnostics: false,
+      extensions: [
+        defineUtility({ name: 'glass', css: 'opacity: 0.8;' }),
+        defineUtility({ name: 'Bad-Name', css: 'opacity: 1;' }),
+      ],
+    });
+    expect(diagnostics.map((d) => d.code)).toEqual(['WF3001']);
+    const content = await readFile(resolve(outputDir, 'generated.js'), 'utf8');
+    expect(content).toContain('"glass"');
+  });
+
+  it('registers custom frontend artifacts after the Tailwind one', async () => {
+    const outputDir = await tempOutputDir();
+    const { hash, hashes } = await compileWindforge({
+      entry: ENTRY,
+      base: FIXTURE,
+      outputDir,
+      diagnostics: false,
+      frontends: [
+        {
+          name: 'demo-frontend',
+          generate: () => [customArtifact()],
         },
-    };
-    return context;
-  }
+      ],
+    });
+    expect(hashes).toEqual([hash, 'frontend01']);
 
-  it('intercepts windforge/generated', () => {
-    const resolveRequest = windforgeResolveRequest('/out/generated.js');
-    const context = makeContext(() => '/fallback.js');
-    const resolution = resolveRequest(context, 'windforge/generated', null);
-    expect(resolution).toEqual({ type: 'sourceFile', filePath: '/out/generated.js' });
+    const content = await readFile(resolve(outputDir, 'generated.js'), 'utf8');
+    expect(content.match(/registerArtifact\(/g)).toHaveLength(2);
+    // Registration order = override order: Tailwind first, frontend last.
+    expect(content.indexOf('"p-4"')).toBeLessThan(content.indexOf('"p-custom"'));
+    expect(content).toContain('"dependencies"');
   });
 
-  it('delegates everything else to Metro resolution', () => {
-    const resolveRequest = windforgeResolveRequest('/out/generated.js');
-    const context = makeContext((name) => `/resolved/${name}.js`);
-    expect(resolveRequest(context, 'react', null)).toEqual({
-      type: 'sourceFile',
-      filePath: '/resolved/react.js',
+  it('WF3010 rejects frontend artifacts with mismatched versions', async () => {
+    const outputDir = await tempOutputDir();
+    const { hashes, diagnostics } = await compileWindforge({
+      entry: ENTRY,
+      base: FIXTURE,
+      outputDir,
+      diagnostics: false,
+      frontends: [
+        {
+          name: 'demo-frontend',
+          generate: () => [customArtifact({ version: 99 })],
+        },
+      ],
     });
+    expect(hashes).toHaveLength(1);
+    expect(diagnostics.map((d) => d.code)).toEqual(['WF3010']);
+    const content = await readFile(resolve(outputDir, 'generated.js'), 'utf8');
+    expect(content).not.toContain('frontend01');
   });
 
-  it('chains an existing resolveRequest', () => {
-    const existing = (
-      _ctx: ResolverContextLike,
-      moduleName: string,
-    ): { type: string; filePath: string } => ({
-      type: 'sourceFile',
-      filePath: `/existing/${moduleName}.js`,
+  it('WF3010 rejects frontend artifacts without a dependencies map', async () => {
+    const outputDir = await tempOutputDir();
+    const noDeps = customArtifact();
+    delete (noDeps as { dependencies?: unknown }).dependencies;
+    const { diagnostics } = await compileWindforge({
+      entry: ENTRY,
+      base: FIXTURE,
+      outputDir,
+      diagnostics: false,
+      frontends: [{ name: 'demo-frontend', generate: () => [noDeps] }],
     });
-    const resolveRequest = windforgeResolveRequest('/out/generated.js', existing);
-    const context = makeContext(() => '/should-not-reach.js');
-    expect(resolveRequest(context, 'expo-router', null)).toEqual({
-      type: 'sourceFile',
-      filePath: '/existing/expo-router.js',
-    });
-    expect(resolveRequest(context, 'windforge/generated', null)).toEqual({
-      type: 'sourceFile',
-      filePath: '/out/generated.js',
-    });
+    expect(diagnostics.map((d) => d.code)).toEqual(['WF3010']);
+    expect(diagnostics[0]?.message).toContain('dependencies');
   });
 });

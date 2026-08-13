@@ -16,7 +16,7 @@ import {
   type BuildResult,
   type RuntimeArtifact,
 } from './artifact.js';
-import { compileTailwindCss } from './compile.js';
+import { compileTailwindCss, type CompileOptions } from './compile.js';
 import { scanCandidates, type ScanSource } from './scan.js';
 import type { Diagnostic } from './types.js';
 
@@ -29,6 +29,12 @@ export type GenerateOptions = {
   sources?: ScanSource[];
   /** Watch hook: called for each CSS dependency (@import/@plugin target). */
   onDependency?: (path: string) => void;
+  /**
+   * CSS text appended to the entry source before compilation — the
+   * @windforge/metro extension seam renders `defineUtility`/`defineVariant`/
+   * `defineTokens` output into this field.
+   */
+  extraCss?: string;
 };
 
 export type GenerateResult = BuildResult;
@@ -37,11 +43,10 @@ export type GenerateResult = BuildResult;
 export async function generate(options: GenerateOptions): Promise<GenerateResult> {
   const base = options.base ?? dirname(options.entry);
   const candidates = scanCandidates(base, options.sources ? { sources: options.sources } : {});
-  const compiled = await compileTailwindCss(
-    options.entry,
-    candidates,
-    options.onDependency ? { onDependency: options.onDependency } : {},
-  );
+  const compileOptions: CompileOptions = {};
+  if (options.onDependency) compileOptions.onDependency = options.onDependency;
+  if (options.extraCss) compileOptions.extraCss = options.extraCss;
+  const compiled = await compileTailwindCss(options.entry, candidates, compileOptions);
   if (compiled.css === '') {
     return {
       artifact: emptyArtifact(),
@@ -70,6 +75,7 @@ export {
   ARTIFACT_VERSION,
   buildArtifact,
   renderArtifactModule,
+  renderArtifactsModule,
   type BuildResult,
   type ClassEntry,
   type RuntimeArtifact,

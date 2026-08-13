@@ -1,7 +1,7 @@
 {
-  "name": "@windforge/metro",
+  "name": "@windforge/extension-sdk",
   "version": "0.0.1",
-  "description": "Windforge Metro integration — build-time style compilation for React Native",
+  "description": "Windforge Extension SDK — define utilities, variants, tokens and presets",
   "license": "MIT",
   "type": "module",
   "main": "./dist/index.js",
@@ -21,13 +21,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "clean": "rm -rf dist *.tsbuildinfo"
   },
-  "dependencies": {
-    "@windforge/extension-sdk": "workspace:*",
-    "@windforge/ir": "workspace:*",
-    "@windforge/tailwind": "workspace:*"
-  },
   "devDependencies": {
-    "@types/node": "^26.2.0",
     "typescript": "^5.9.2",
     "vitest": "^3.2.4"
   }

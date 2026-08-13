@@ -5,13 +5,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 vi.mock('react-native', () => ({
   processColor: (color: string) => parseInt(color.slice(1), 16),
 }));
-import { __resetBackend, getBackend, selectBackend } from '../src/backends/index.js';
+import { __resetBackend, getBackend, selectBackend, setBackend } from '../src/backends/index.js';
 import { createFabricBackend, setFabricNativeAdapter, type NativeStyleAdapter } from '../src/backends/fabric.js';
 import { createJsBaselineBackend } from '../src/backends/js-baseline.js';
 import { __resetRegistry, registerArtifact } from '../src/registry.js';
 import * as resolveModule from '../src/resolve.js';
 import { __clearStyleCache, resolveClassNames } from '../src/resolve.js';
 import type { ConditionState } from '../src/state.js';
+import type { StyleBackend } from '../src/backends/types.js';
 import type { RuntimeArtifact } from '../src/types.js';
 
 const light: ConditionState = {
@@ -91,6 +92,56 @@ describe('backend selection', () => {
 
   it('selectBackend(js-baseline) returns the baseline backend', () => {
     expect(selectBackend('js-baseline').name).toBe('js-baseline');
+  });
+});
+
+describe('custom backend interface', () => {
+  beforeEach(() => {
+    __resetRegistry();
+    __clearStyleCache();
+    __resetBackend();
+    registerArtifact(artifact);
+  });
+
+  /** A custom backend that wraps js-baseline and records resolve calls. */
+  function createWrappingBackend() {
+    const resolved: Array<{ className: string; state: ConditionState }> = [];
+    const inner = createJsBaselineBackend();
+    const backend: StyleBackend = {
+      name: 'custom-wrapper',
+      requiresContext: () => inner.requiresContext(),
+      resolveStyle: (className, state) => {
+        resolved.push({ className, state });
+        return inner.resolveStyle(className, state);
+      },
+    };
+    return { resolved, backend };
+  }
+
+  it('setBackend installs the backend returned by getBackend', () => {
+    const { backend } = createWrappingBackend();
+    expect(setBackend(backend)).toBe(backend);
+    expect(getBackend()).toBe(backend);
+    expect(getBackend().name).toBe('custom-wrapper');
+  });
+
+  it('routes resolution through the custom backend', () => {
+    const { backend, resolved } = createWrappingBackend();
+    setBackend(backend);
+    expect(getBackend().resolveStyle('p-4 bg-zinc-950', dark)).toEqual({
+      padding: 16,
+      backgroundColor: '#fafafa',
+    });
+    expect(resolved).toEqual([{ className: 'p-4 bg-zinc-950', state: dark }]);
+  });
+
+  it('a later selectBackend replaces the custom backend', () => {
+    const { backend } = createWrappingBackend();
+    setBackend(backend);
+    // The ordering contract: setBackend must be the LAST backend-affecting
+    // call before WindforgeProvider mounts.
+    expect(selectBackend('js-baseline').name).toBe('js-baseline');
+    expect(getBackend().name).toBe('js-baseline');
   });
 });
 

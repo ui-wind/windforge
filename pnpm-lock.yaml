@@ -131,6 +131,15 @@ importers:
         specifier: ^3.2.4
         version: 3.2.7(@types/node@26.2.0)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.50.0)(yaml@2.9.0)
 
+  packages/extension-sdk:
+    devDependencies:
+      typescript:
+        specifier: ^5.9.2
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/node@26.2.0)(jiti@2.7.0)(lightningcss@1.33.0)(terser@5.50.0)(yaml@2.9.0)
+
   packages/ir:
     devDependencies:
       typescript:
@@ -142,6 +151,9 @@ importers:
 
   packages/metro:
     dependencies:
+      '@windforge/extension-sdk':
+        specifier: workspace:*
+        version: link:../extension-sdk
       '@windforge/ir':
         specifier: workspace:*
         version: link:../ir
