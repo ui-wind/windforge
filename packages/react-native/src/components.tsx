@@ -7,6 +7,13 @@
  * change (traditional behavior). fabric: components read the snapshot
  * without subscribing — condition updates are delivered natively via the
  * delivery protocol, and mount/unmount link the host node to its className.
+ *
+ * `createStyledElement` is the generalized factory shared by the primitives
+ * below and by `styled()` (prop-mapping). Native delivery can only bind ONE
+ * className string per host node, so linking (and the no-re-render
+ * subscription mode) applies only to components whose single mapping is the
+ * primary `className → style` pair; components with secondary surfaces
+ * (e.g. `contentContainerClassName`) subscribe and re-render instead.
  */
 import {
   createElement,
@@ -27,6 +34,7 @@ import {
 } from 'react-native';
 import { getBackend } from './backends/index.js';
 import { useConditionState } from './provider.js';
+import type { ClassPropMapping } from './prop-mapping/registry.js';
 import type { ReactNativeStyle } from './resolve.js';
 
 export type StyledProps = {
@@ -57,20 +65,53 @@ function hostHandleOf(instance: unknown): number | null {
   }
 }
 
-function createStyledComponent<Props extends { style?: unknown }>(
+const PRIMARY_MAPPING: ClassPropMapping[] = [
+  { classNameProp: 'className', styleProp: 'style' },
+];
+
+/** The primary `className → style` pair, linkable through the native protocol. */
+function isLinkable(mappings: ClassPropMapping[]): boolean {
+  return (
+    mappings.length === 1 &&
+    mappings[0]?.classNameProp === 'className' &&
+    mappings[0]?.styleProp === 'style'
+  );
+}
+
+/**
+ * Generalized styled-component factory. Resolves every mapping's className
+ * prop through the backend and merges it into the matching style prop (user
+ * style wins). See the module note on linking and subscription rules.
+ */
+export function createStyledElement<Props extends object>(
   Component: ElementType,
   displayName: string,
+  mappings: ClassPropMapping[],
 ) {
+  const linkable = isLinkable(mappings);
+
   const Styled = forwardRef<unknown, Props & StyledProps>(function StyledComponent(
     props,
     ref: Ref<unknown>,
   ) {
-    const { className, style, ...rest } = props as Props & StyledProps;
     const backend = getBackend();
     // Only backends that deliver through React props need to re-render on
     // condition changes; subscribing=false keeps the snapshot without it.
-    const state = useConditionState(backend.requiresContext());
-    const classNameStyle = className ? backend.resolveStyle(className, state) : {};
+    // Non-linkable mappings (secondary style surfaces) always subscribe —
+    // the native protocol cannot deliver them.
+    const state = useConditionState(linkable ? backend.requiresContext() : true);
+
+    const resolved: Record<string, unknown> = {};
+    let primaryClassName: string | undefined;
+    for (const mapping of mappings) {
+      const className = (props as Record<string, unknown>)[mapping.classNameProp];
+      if (typeof className !== 'string' || !className) continue;
+      if (mapping.classNameProp === 'className') primaryClassName = className;
+      resolved[mapping.styleProp] = mergeStyles(
+        backend.resolveStyle(className, state),
+        (props as Record<string, unknown>)[mapping.styleProp],
+      );
+    }
 
     const hostRef = useRef<unknown>(null);
     const setHostRef = useCallback(
@@ -82,25 +123,36 @@ function createStyledComponent<Props extends { style?: unknown }>(
     );
 
     useEffect(() => {
-      if (!className || backend.link === undefined) return undefined;
+      if (!linkable || !primaryClassName || backend.link === undefined) return undefined;
       const handle = hostHandleOf(hostRef.current);
       if (handle === null) return undefined;
-      backend.link(handle, className, state);
+      backend.link(handle, primaryClassName, state);
       return () => backend.unlink?.(handle);
       // `state` is only read as a fallback snapshot by the fabric backend
       // (its live state comes from the provider's condition store), and it
       // never changes while the component is unsubscribed.
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [backend, className]);
+    }, [backend, linkable, primaryClassName]);
+
+    // className props are Windforge-only; never forward them to the host.
+    const rest: Record<string, unknown> = { ...props };
+    for (const mapping of mappings) delete rest[mapping.classNameProp];
 
     return createElement(Component, {
       ...rest,
-      style: mergeStyles(classNameStyle, style),
-      ref: backend.link ? setHostRef : ref,
+      ...resolved,
+      ref: linkable && backend.link ? setHostRef : ref,
     });
   });
   Styled.displayName = `Windforge${displayName}`;
   return Styled;
+}
+
+function createStyledComponent<Props extends { style?: unknown }>(
+  Component: ElementType,
+  displayName: string,
+) {
+  return createStyledElement<Props>(Component, displayName, PRIMARY_MAPPING);
 }
 
 export type ViewProps = ComponentProps<typeof RNView> & StyledProps;

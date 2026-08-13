@@ -61,3 +61,4 @@ export { emptyIR } from './ir.js';
 export type { CanonicalOptions } from './canonical.js';
 export { toCanonicalJson, toCanonicalString } from './canonical.js';
 export { hashIR, hashCanonical } from './hash.js';
+export { parseStaticUtility } from './static-utility.js';

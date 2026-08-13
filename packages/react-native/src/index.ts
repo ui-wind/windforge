@@ -36,6 +36,7 @@ export {
 } from './resolve.js';
 export type { ReactNativeStyle } from './resolve.js';
 export { stateSignature, type ConditionState } from './state.js';
+export { cx, cn, type ClassValue } from './cx.js';
 export {
   isCompatibleArtifact,
   SUPPORTED_ARTIFACT_VERSION,
@@ -44,3 +45,17 @@ export {
   type RuntimeArtifact,
   type VariantEntry,
 } from './types.js';
+export {
+  __resetRuntimeDiagnostics,
+  getRuntimeDiagnostics,
+  type RuntimeDiagnostics,
+} from './diagnostics.js';
+export {
+  __resetComponentRegistry,
+  getComponentMapping,
+  registerComponent,
+  styled,
+  useWindforgeStyle,
+  type ClassPropMapping,
+  type ComponentMappingRecord,
+} from './prop-mapping/index.js';

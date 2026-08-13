@@ -220,6 +220,39 @@ describe('fabric backend', () => {
     expect(adapter.unlink).toHaveBeenCalledWith(101);
   });
 
+  describe('runtime fallback', () => {
+    it('delivers fallback-resolved classes through the same protocol key', () => {
+      const { adapter, calls } = createMockAdapter();
+      setFabricNativeAdapter(adapter);
+      const backend = createFabricBackend();
+
+      // p-9 is not in the artifact; the controlled fallback parser resolves
+      // it (9 × 4 = 36) and the merged string crosses the native boundary
+      // as one key, exactly like artifact-only strings do.
+      backend.resolveStyle('p-4 p-9', light);
+      backend.link?.(201, 'p-4 p-9', light);
+
+      const register = calls.find((c) => c.method === 'registerStyles');
+      expect(register?.args[0]).toEqual({ 'p-4 p-9': { padding: 36 } });
+      expect(calls).toContainEqual({ method: 'link', args: [201, 'p-4 p-9'] });
+    });
+
+    it('does not re-push fallback-containing strings when conditions change', () => {
+      const { adapter } = createMockAdapter();
+      setFabricNativeAdapter(adapter);
+      const backend = createFabricBackend();
+
+      backend.resolveStyle('p-4 p-9', light);
+      backend.link?.(201, 'p-4 p-9', light);
+
+      // Fallback tokens carry no dependencies entry, so the prefilter skips
+      // the string entirely on a color-scheme flip — its output is static
+      // base-only and cannot change.
+      backend.onConditionsChanged?.(dark, light);
+      expect(adapter.updateStyles).not.toHaveBeenCalled();
+    });
+  });
+
   it('degrades gracefully without a native adapter', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const backend = createFabricBackend();

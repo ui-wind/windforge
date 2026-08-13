@@ -1,6 +1,10 @@
-import { describe, expect, it, beforeEach } from 'vitest';
+import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { __resetRegistry, registerArtifact } from '../src/registry.js';
 import { __clearStyleCache, resolveClassNames, toReactNativeValue } from '../src/resolve.js';
+import {
+  __resetRuntimeDiagnostics,
+  getRuntimeDiagnostics,
+} from '../src/diagnostics.js';
 import type { ConditionState } from '../src/state.js';
 import type { RuntimeArtifact } from '../src/types.js';
 
@@ -79,6 +83,7 @@ describe('resolution', () => {
   beforeEach(() => {
     __resetRegistry();
     __clearStyleCache();
+    __resetRuntimeDiagnostics();
     registerArtifact(artifact);
   });
 
@@ -132,6 +137,144 @@ describe('resolution', () => {
       },
     });
     expect(resolveClassNames('p-4', light)).toEqual({ padding: 24 });
+  });
+});
+
+describe('runtime fallback', () => {
+  beforeEach(() => {
+    __resetRegistry();
+    __clearStyleCache();
+    __resetRuntimeDiagnostics();
+    registerArtifact(artifact);
+  });
+
+  it('resolves static spacing tokens absent from the artifact', () => {
+    // p-7 is not in the artifact; the controlled fallback parses it.
+    expect(resolveClassNames('p-7', light)).toEqual({ padding: 28 });
+    expect(getRuntimeDiagnostics().fallbackParses).toBe(1);
+  });
+
+  it('keeps artifact entries ahead of the fallback', () => {
+    // p-4 exists in the artifact and wins over the parsed value.
+    expect(resolveClassNames('p-4', light)).toEqual({ padding: 16 });
+    expect(getRuntimeDiagnostics().fallbackParses).toBe(0);
+  });
+
+  it('merges fallback and artifact classes, later wins', () => {
+    expect(resolveClassNames('p-4 p-7', light)).toEqual({ padding: 28 });
+    expect(resolveClassNames('p-7 p-4', light)).toEqual({ padding: 16 });
+  });
+
+  it('caches fallback results with stable identity', () => {
+    const first = resolveClassNames('p-7', light);
+    const second = resolveClassNames('p-7', light);
+    expect(second).toBe(first);
+  });
+
+  it('skips tokens the fallback cannot parse and records them', () => {
+    expect(resolveClassNames('rotate-45 p-4', light)).toEqual({ padding: 16 });
+    const diagnostics = getRuntimeDiagnostics();
+    expect(diagnostics.fallbackMisses).toBe(1);
+    expect(diagnostics.unknownTokens).toEqual(['rotate-45']);
+  });
+
+  it('warns once per unknown token in dev builds', () => {
+    (globalThis as Record<string, unknown>).__DEV__ = true;
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      resolveClassNames('nope-xyz p-4', light);
+      __clearStyleCache();
+      resolveClassNames('nope-xyz p-4', light);
+      const calls = warn.mock.calls.map((args) => String(args[0]));
+      expect(calls.filter((message) => message.includes('WF2001'))).toHaveLength(1);
+      expect(calls.some((message) => message.includes('nope-xyz'))).toBe(true);
+    } finally {
+      delete (globalThis as Record<string, unknown>).__DEV__;
+      warn.mockRestore();
+    }
+  });
+
+  it('notices the first fallback use in dev builds', () => {
+    (globalThis as Record<string, unknown>).__DEV__ = true;
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      resolveClassNames('p-7', light);
+      __clearStyleCache();
+      resolveClassNames('p-9', light);
+      const calls = warn.mock.calls.map((args) => String(args[0]));
+      expect(calls.filter((message) => message.includes('WF2002'))).toHaveLength(1);
+    } finally {
+      delete (globalThis as Record<string, unknown>).__DEV__;
+      warn.mockRestore();
+    }
+  });
+});
+
+describe('composed-string cache', () => {
+  beforeEach(() => {
+    __resetRegistry();
+    __clearStyleCache();
+    __resetRuntimeDiagnostics();
+    registerArtifact(artifact);
+  });
+
+  it('returns the same object for the same className string', () => {
+    const first = resolveClassNames('p-4 bg-zinc-950', light);
+    const second = resolveClassNames('p-4 bg-zinc-950', light);
+    expect(second).toBe(first);
+  });
+
+  it('normalizes whitespace before keying', () => {
+    const first = resolveClassNames('p-4 bg-zinc-950', light);
+    const second = resolveClassNames('  p-4    bg-zinc-950 ', light);
+    expect(second).toBe(first);
+  });
+
+  it('recomputes on condition change', () => {
+    const lightResult = resolveClassNames('dark:text-white', light);
+    const darkResult = resolveClassNames('dark:text-white', { ...light, colorScheme: 'dark' });
+    expect(darkResult).not.toBe(lightResult);
+    expect(darkResult).toEqual({ color: '#ffffff' });
+  });
+
+  it('recomputes when a new artifact registers', () => {
+    const before = resolveClassNames('p-4', light);
+    registerArtifact({
+      ...artifact,
+      hash: 'v2',
+      styles: {
+        'p-4': {
+          base: [{ property: 'padding', value: { kind: 'number', value: 24 }, sourceOrder: 0 }],
+        },
+      },
+    });
+    const after = resolveClassNames('p-4', light);
+    expect(after).not.toBe(before);
+    expect(after).toEqual({ padding: 24 });
+  });
+
+  it('counts hits and misses', () => {
+    resolveClassNames('p-4', light); // miss: 1 token resolve
+    const before = getRuntimeDiagnostics();
+    resolveClassNames('p-4', light); // composed hit: no token resolves
+    const after = getRuntimeDiagnostics();
+    expect(after.resolves).toBe(before.resolves);
+    __clearStyleCache();
+    resolveClassNames('p-4', light); // token cache cleared: cache miss again
+    expect(getRuntimeDiagnostics().cacheMisses).toBe(before.cacheMisses + 1);
+  });
+
+  it('resets diagnostics to zero', () => {
+    resolveClassNames('p-4 rotate-45', light);
+    __resetRuntimeDiagnostics();
+    expect(getRuntimeDiagnostics()).toEqual({
+      resolves: 0,
+      cacheHits: 0,
+      cacheMisses: 0,
+      fallbackParses: 0,
+      fallbackMisses: 0,
+      unknownTokens: [],
+    });
   });
 });
 
