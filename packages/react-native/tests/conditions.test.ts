@@ -8,6 +8,9 @@ const baseState: ConditionState = {
   platform: 'ios',
   windowWidth: 390,
   windowHeight: 844,
+  fontScale: 1,
+  pixelRatio: 3,
+  layoutDirection: 'ltr',
 };
 
 describe('evaluateCondition', () => {
@@ -51,5 +54,14 @@ describe('evaluateCondition', () => {
   it('does not evaluate interactive conditions in the MVP', () => {
     const hover: ConditionIR = { kind: 'state', id: 'h', state: 'hover' };
     expect(evaluateCondition(hover, baseState)).toBe(false);
+  });
+
+  it('evaluates layout-direction', () => {
+    const rtl: ConditionIR = { kind: 'layout-direction', id: 'rtl', direction: 'rtl' };
+    expect(evaluateCondition(rtl, baseState)).toBe(false);
+    expect(evaluateCondition(rtl, { ...baseState, layoutDirection: 'rtl' })).toBe(true);
+    const ltr: ConditionIR = { kind: 'layout-direction', id: 'ltr', direction: 'ltr' };
+    expect(evaluateCondition(ltr, baseState)).toBe(true);
+    expect(evaluateCondition(ltr, { ...baseState, layoutDirection: 'rtl' })).toBe(false);
   });
 });

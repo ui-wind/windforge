@@ -38,6 +38,17 @@ export {
 } from './resolve.js';
 export type { AnimationMeta, ReactNativeStyle } from './resolve.js';
 export { stateSignature, type ConditionState } from './state.js';
+export {
+  getInsets,
+  getMetrics,
+  setInsets,
+  subscribeInsets,
+  useInsets,
+  useMetrics,
+  __resetInsets,
+  type SafeAreaInsets,
+  type WindforgeMetrics,
+} from './metrics.js';
 export { cx, cn, type ClassValue } from './cx.js';
 export {
   isCompatibleArtifact,

@@ -19,6 +19,9 @@ const light: ConditionState = {
   platform: 'ios',
   windowWidth: 390,
   windowHeight: 844,
+  fontScale: 1,
+  pixelRatio: 3,
+  layoutDirection: 'ltr',
 };
 
 const dark: ConditionState = { ...light, colorScheme: 'dark' };

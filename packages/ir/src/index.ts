@@ -36,6 +36,7 @@ export type {
   MediaFeature,
   ColorSchemeConditionIR,
   PlatformConditionIR,
+  LayoutDirectionConditionIR,
   StateConditionIR,
   InteractionState,
   ContainerConditionIR,

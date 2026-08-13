@@ -1,0 +1,5 @@
+@import 'tailwindcss';
+
+@custom-variant rtl (@media (layout-direction: rtl));
+@custom-variant ltr (@media (layout-direction: ltr));
+@custom-variant bad (@media (layout-direction: upward));

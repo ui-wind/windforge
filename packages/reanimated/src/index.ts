@@ -28,3 +28,7 @@ export {
   type TransitionPlan,
 } from './compile.js';
 export { useAnimatedConditionState, type AnimatedConditionState } from './conditions.js';
+export {
+  useAnimatedThemeProgress,
+  type AnimatedThemeProgressOptions,
+} from './theme.js';

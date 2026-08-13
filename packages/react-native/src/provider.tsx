@@ -21,7 +21,7 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from 'react';
-import { Appearance, Dimensions, Platform } from 'react-native';
+import { Appearance, Dimensions, I18nManager, PixelRatio, Platform } from 'react-native';
 import { getBackend } from './backends/index.js';
 import type { ConditionState } from './state.js';
 
@@ -34,12 +34,23 @@ function platformOf(os: string): ConditionState['platform'] {
   return 'android';
 }
 
+/**
+ * Layout direction is observed once: toggling RTL on native requires an app
+ * restart (`I18nManager.forceRTL`), so a live subscription would never fire.
+ */
+function readLayoutDirection(): ConditionState['layoutDirection'] {
+  return I18nManager.getConstants().isRTL ? 'rtl' : 'ltr';
+}
+
 function readConditions(): ConditionState {
   return {
     colorScheme: Appearance.getColorScheme() === 'dark' ? 'dark' : 'light',
     platform: platformOf(Platform.OS),
     windowWidth: Dimensions.get('window').width,
     windowHeight: Dimensions.get('window').height,
+    fontScale: PixelRatio.getFontScale(),
+    pixelRatio: PixelRatio.get(),
+    layoutDirection: readLayoutDirection(),
   };
 }
 
@@ -117,14 +128,19 @@ export function WindforgeProvider(props: WindforgeProviderProps): ReactNode {
       },
     );
     const dimensionsSubscription = Dimensions.addEventListener('change', ({ window }) => {
+      // fontScale can change with a dimension change on Android (accessibility
+      // font scaling); re-read it alongside the window size.
+      const fontScale = PixelRatio.getFontScale();
       if (
         conditions.windowWidth !== window.width ||
-        conditions.windowHeight !== window.height
+        conditions.windowHeight !== window.height ||
+        conditions.fontScale !== fontScale
       ) {
         setConditions({
           ...conditions,
           windowWidth: window.width,
           windowHeight: window.height,
+          fontScale,
         });
       }
     });

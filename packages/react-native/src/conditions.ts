@@ -17,6 +17,8 @@ export function evaluateCondition(
     case 'platform':
       if (condition.platform === 'native') return state.platform !== 'web';
       return state.platform === condition.platform;
+    case 'layout-direction':
+      return state.layoutDirection === condition.direction;
     case 'media': {
       const threshold = numberValue(condition);
       switch (condition.feature) {

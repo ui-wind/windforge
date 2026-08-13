@@ -17,7 +17,8 @@ export type ConditionSpec =
   | { kind: 'color-scheme'; scheme: 'light' | 'dark' }
   | { kind: 'media-width'; operator: '>=' | '<='; px: number }
   | { kind: 'orientation'; orientation: 'portrait' | 'landscape' }
-  | { kind: 'platform'; platform: 'ios' | 'android' | 'web' | 'native' };
+  | { kind: 'platform'; platform: 'ios' | 'android' | 'web' | 'native' }
+  | { kind: 'layout-direction'; direction: 'ltr' | 'rtl' };
 
 /** Deterministic id for a condition spec. */
 export function conditionId(spec: ConditionSpec): string {
@@ -30,6 +31,8 @@ export function conditionId(spec: ConditionSpec): string {
       return `orientation:${spec.orientation}`;
     case 'platform':
       return `platform:${spec.platform}`;
+    case 'layout-direction':
+      return `layout-direction:${spec.direction}`;
   }
 }
 
@@ -54,5 +57,7 @@ export function specToConditionIR(spec: ConditionSpec): ConditionIR {
       };
     case 'platform':
       return { kind: 'platform', id, platform: spec.platform };
+    case 'layout-direction':
+      return { kind: 'layout-direction', id, direction: spec.direction };
   }
 }

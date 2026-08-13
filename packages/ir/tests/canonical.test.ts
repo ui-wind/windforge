@@ -126,4 +126,21 @@ describe('hashIR', () => {
     });
     expect(hashIR(a)).not.toBe(hashIR(b));
   });
+
+  it('hashes layout-direction conditions stably and distinctly', () => {
+    const rtl = ir({
+      declarations: [],
+      conditions: [{ kind: 'layout-direction', id: 'layout-direction:rtl', direction: 'rtl' }],
+    });
+    const rtlReordered = ir({
+      declarations: [],
+      conditions: [{ direction: 'rtl', kind: 'layout-direction', id: 'layout-direction:rtl' }],
+    });
+    expect(hashIR(rtl)).toBe(hashIR(rtlReordered));
+    const ltr = ir({
+      declarations: [],
+      conditions: [{ kind: 'layout-direction', id: 'layout-direction:ltr', direction: 'ltr' }],
+    });
+    expect(hashIR(ltr)).not.toBe(hashIR(rtl));
+  });
 });

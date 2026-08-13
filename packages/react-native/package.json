@@ -10,6 +10,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./safe-area": {
+      "types": "./dist/safe-area.d.ts",
+      "default": "./dist/safe-area.js"
     }
   },
   "files": [
@@ -27,13 +31,20 @@
   },
   "peerDependencies": {
     "react": ">=19",
-    "react-native": ">=0.86"
+    "react-native": ">=0.86",
+    "react-native-safe-area-context": ">=5"
+  },
+  "peerDependenciesMeta": {
+    "react-native-safe-area-context": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@types/node": "^26.2.0",
     "@types/react": "^19.2.0",
     "react": "19.2.3",
     "react-native": "0.86.2",
+    "react-native-safe-area-context": "~5.7.0",
     "react-test-renderer": "19.2.3",
     "typescript": "^5.9.2",
     "vitest": "^3.2.4"

@@ -58,6 +58,13 @@ function parseFeatureCondition(condition: AnyRecord): MediaParseResult {
       }
       return { ok: false, reason: `platform: ${ident}` };
     }
+    // Windforge convention: @custom-variant rtl (@media (layout-direction: rtl)).
+    if (name === 'layout-direction') {
+      if (ident === 'ltr' || ident === 'rtl') {
+        return { ok: true, conditions: [{ kind: 'layout-direction', direction: ident }] };
+      }
+      return { ok: false, reason: `layout-direction: ${ident}` };
+    }
     if (name === 'hover' || name === 'pointer' || name === 'any-hover' || name === 'any-pointer') {
       return { ok: false, reason: `pointer-capability query (${name})` };
     }

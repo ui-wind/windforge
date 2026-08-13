@@ -24,6 +24,8 @@ vi.mock('react-native', () => ({
     get: () => ({ width: 390, height: 844 }),
     addEventListener: () => ({ remove() {} }),
   },
+  PixelRatio: { get: () => 3, getFontScale: () => 1 },
+  I18nManager: { getConstants: () => ({ isRTL: false }) },
   Platform: { OS: 'ios' },
 }));
 

@@ -36,6 +36,14 @@ export type PlatformConditionIR = {
   platform: 'ios' | 'android' | 'web' | 'native';
 };
 
+/** Layout direction — driven by `rtl:`/`ltr:` variants on native and the
+ * `dir` attribute (or CSS direction) on web. */
+export type LayoutDirectionConditionIR = {
+  kind: 'layout-direction';
+  id: string;
+  direction: 'ltr' | 'rtl';
+};
+
 export type InteractionState =
   | 'hover'
   | 'focus'
@@ -83,6 +91,7 @@ export type ConditionIR =
   | MediaConditionIR
   | ColorSchemeConditionIR
   | PlatformConditionIR
+  | LayoutDirectionConditionIR
   | StateConditionIR
   | ContainerConditionIR
   | CustomConditionIR;
