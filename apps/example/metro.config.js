@@ -10,10 +10,15 @@ const { compileWindforge, withWindforge } = require('@windforge/metro');
 module.exports = (async () => {
   const outputDir = path.resolve(__dirname, '.windforge');
 
+  // The app owns its config file (zero magic in @windforge/metro).
+  const windforgeConfig = require('./windforge.config.cjs');
+
   await compileWindforge({
     entry: path.resolve(__dirname, './src/global.css'),
     base: __dirname,
     outputDir,
+    extensions: windforgeConfig.extensions,
+    frontends: windforgeConfig.frontends,
   });
 
   const config = getDefaultConfig(__dirname);

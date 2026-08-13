@@ -416,16 +416,97 @@ These are the Phase 7 decision records (Rule 13).
 Demo: `apps/example/src/app/metrics.tsx` (Metrics tab). Verification runbook:
 `docs/guides/NATIVE_SETUP_IOS.md`.
 
-## Phase 8 — Extension SDK
+## Phase 8 — Extension SDK ✅
 
-Implement:
+Goal: let Windforge grow beyond Tailwind without rewriting the compiler —
+`defineUtility`, `defineVariant`, `defineTokens`, `definePreset`, a custom
+frontend interface and a custom backend interface
+(`docs/specs/EXTENSION_API_SPEC.md`).
 
-- defineUtility
-- defineVariant
-- defineTokens
-- definePreset
-- custom frontend interface
-- custom backend interface
+Done:
+
+- ✅ New package `@windforge/extension-sdk` (zero deps): the four `define*`
+  functions return plain serializable descriptors; `renderExtensions` lowers
+  them to CSS text (`@utility` / `@custom-variant` / `@theme`) injected into
+  the entry stylesheet after the WF1000 check and before oxide compilation —
+  oxide + the existing IR pipeline do all of the work. Validation is
+  pre-render (oxide positions cannot be attributed back to the extension
+  that produced the text): WF3001 invalid name, WF3002 empty body/value,
+  WF3003 `@import` in extension CSS, WF3004 non-evaluable variant media,
+  WF3005 unknown token namespace.
+- ✅ `@windforge/tailwind`: `generate({ extraCss })` injection seam, and
+  try/catch around the oxide compile/build so malformed CSS surfaces as a
+  WF1xxx diagnostic instead of crashing Metro startup.
+- ✅ `@windforge/metro`: `compileWindforge({ extensions, frontends })` —
+  extensions render to `extraCss`; `WindforgeFrontend = { name, generate }`
+  runs after the default Tailwind frontend, each produced artifact is
+  validated (`version`/`irVersion` supported, `dependencies` present —
+  WF3010) and the generated module renders N `registerArtifact` calls; the
+  registry prefers later registrations per class name, so frontends
+  override Tailwind one class at a time.
+- ✅ `@windforge/react-native`: `setBackend(backend)` escape hatch and
+  `StyleBackendName` widened to `'js-baseline' | 'fabric' | (string & {})`
+  (built-in autocomplete kept, custom names accepted).
+- ✅ Example: `apps/example/windforge.config.cjs` (`glass` utility, `brand`
+  color token, `land` orientation variant, plus a handwritten frontend
+  emitting `card-pad`/`card-radius`) wired through `metro.config.js`;
+  Extensions screen (`apps/example/src/app/extensions.tsx`, under More in
+  the tab bar) with a web placeholder.
+
+Measured on the iOS simulator (iPhone 17 Pro, dev client, Metro dev bundle),
+Rule 11:
+
+| measurement | result |
+| --- | --- |
+| artifact, baseline → extended | hash `e5fd5b4f` (87 classes, 5 conditions) → `a3f5366a` (90 classes, 6 conditions) plus a second artifact `example-frontend-v1` (2 classes) |
+| `glass bg-brand` box, light | pixel `#4cce7c` = 0.8 × `#22c55e` over `#f4f4f5` (glass opacity over the page background), exact |
+| same box, dark | `#65a702` ≈ 0.8 × lime-500 `#84cc16` over `#09090b` (`dark:` override wins over the token) |
+| `land:bg-emerald-500`, landscape | `#31c795` ≈ 0.8 × `#10b981` over `#f4f4f5` — the defineVariant condition flips live on rotation; portrait stays brand green |
+| custom frontend box | `card-pad card-radius bg-indigo-500` renders `#615fff` with padding 20 / radius 14 from the handwritten artifact; no WF2001 |
+| backend row | `getBackend().name` = `fabric` — `installNativeDelivery` still owns backend selection (setBackend ordering contract) |
+| regression | Home/Explore/Animation/Metrics/Stress clean in light+dark; tab bar gains Extensions under More |
+
+Scope notes:
+
+- Declarations outside the RN lowering table receive WF1003/WF1005 like any
+  Tailwind utility (no special-casing); variant media is limited to the five
+  evaluable condition kinds (color-scheme, orientation, platform,
+  layout-direction, width ranges).
+- No config-file loader in `@windforge/metro` — the example requires its own
+  `windforge.config.cjs` and passes `extensions`/`frontends` to
+  `compileWindforge` (zero-magic Metro).
+- Android not exercised this phase (iOS-only verification, same as
+  Phases 4–7).
+
+### Decisions
+
+These are the Phase 8 decision records (Rule 13).
+
+- **CSS-text lowering, not IR hooks.** Every `define*` lowers to CSS text
+  injected before oxide; oxide + the existing collect/lower pipeline do the
+  rest. An IR-level hook after oxide would fork that pipeline for zero
+  benefit and violate build-time-first, while oxide already implements
+  `@utility`/`@theme`/`@custom-variant` semantics correctly.
+- **`WindforgeFrontend` lives in `@windforge/metro` and imports
+  `RuntimeArtifact` from `@windforge/tailwind`.** Metro is the build-time
+  orchestrator and already depends on tailwind; moving `RuntimeArtifact` to
+  `@windforge/ir` (its conceptual home) is deferred to avoid cross-package
+  churn this phase.
+- **WF3xxx validation is pre-render.** Oxide throws plain errors whose
+  positions cannot be mapped back to the extension that produced the text,
+  so `renderExtensions` validates names, bodies and media before rendering;
+  invalid descriptors are dropped, valid ones still render.
+- **`setBackend` is an escape hatch with an ordering contract.** It must be
+  the last backend-affecting call before `WindforgeProvider` mounts
+  (`installNativeDelivery` ends with `selectBackend('fabric')`); custom
+  backends that want native condition delivery wrap or delegate to fabric
+  instead of replacing it; `resolveStyle` must stay correct because
+  `@windforge/reanimated` calls it on every animated render.
+- **No config-file loader (deferred).** Metro stays zero-magic; a loader
+  with discovery and conventions is a later DX phase.
+
+Demo: `apps/example/src/app/extensions.tsx` (Extensions, under More in the
+tab bar). Verification runbook: `docs/guides/NATIVE_SETUP_IOS.md`.
 
 ## Phase 9 — Hardening
 

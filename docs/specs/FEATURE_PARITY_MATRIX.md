@@ -15,8 +15,8 @@ Legend:
 | className | P0 | ✓ | ✓ | Core API |
 | Tailwind v4 utilities | P0 | ✓ | ✓ | Shared frontend |
 | @theme | P0 | ✓ | ✓ | Token IR |
-| @utility | P1 | ✓ | ✓ | Extension API |
-| @custom-variant | P1 | ✓ | ✓ | Variant compiler |
+| @utility | P1 | ✓ | ✓ | Extension API (Phase 8: `defineUtility` authoring) |
+| @custom-variant | P1 | ✓ | ✓ | Variant compiler (Phase 8: `defineVariant` authoring) |
 | @source | P0 | ✓ | ✓ | Monorepo/content discovery |
 | @plugin | P1 | ✓ | ✓ | Isolated plugin adapter |
 | arbitrary values | P0 | ✓ | ✓ | Capability checked |
@@ -99,14 +99,15 @@ Legend:
 
 ## Extensibility
 
-| Feature | Priority |
-|---|---:|
-| defineUtility | P0 |
-| defineVariant | P0 |
-| defineTokens | P0 |
-| definePreset | P1 |
-| defineFrontend | P1 |
-| defineBackend | P1 |
-| custom IR transforms | P1 |
-| plugin lifecycle hooks | P1 |
-| Flutter backend interface | P2 |
+| Feature | Priority | Notes |
+|---|---:|---|
+| defineUtility | P0 | ✅ Phase 8: `@windforge/extension-sdk`, CSS-text lowering (`@utility`) |
+| defineVariant | P0 | ✅ Phase 8: `@custom-variant`; media limited to the five evaluable condition kinds |
+| defineTokens | P0 | ✅ Phase 8: `@theme` namespaces (colors/animate/spacing/radius/fontFamily/fontSize) |
+| definePreset | P1 | ✅ Phase 8: aggregates utilities/variants/tokens + raw CSS |
+| defineFrontend | P1 | ✅ Phase 8: `WindforgeFrontend` in `@windforge/metro`, WF3010 validation, later-registration-wins override |
+| defineBackend | P1 | ✅ Phase 8: `setBackend` in `@windforge/react-native` with the ordering contract |
+| custom IR transforms | P1 | |
+| plugin lifecycle hooks | P1 | |
+| `@plugin` JS plugin adapter | P1 | Tailwind row above; distinct from the descriptor surface |
+| Flutter backend interface | P2 | Phase 10 research |

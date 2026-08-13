@@ -257,6 +257,49 @@ watcher). After editing `global.css` or adding class literals, restart Metro
 — WF2001 warnings for classes that *should* exist in the artifact are the
 stale-artifact symptom.
 
+## Extensions screen verification (Phase 8)
+
+The Extensions entry (under **More** in the tab bar;
+`apps/example/src/app/extensions.tsx`) demos the Extension SDK
+(`apps/example/windforge.config.cjs`), the custom frontend interface and the
+backend name. The simulator deep link is `example://extensions`:
+
+```bash
+xcrun simctl openurl booted "example://extensions"
+```
+
+Check the following:
+
+- **Extension SDK box** — `glass bg-brand land:bg-emerald-500
+  dark:bg-lime-500`: light mode renders `#4cce7c` (the `glass` utility's
+  0.8 opacity over the page background, brand token `#22c55e`);
+  `xcrun simctl ui booted appearance dark` flips it to lime (sampled
+  `#65a702`); rotating the simulator to landscape flips it to emerald
+  (sampled `#31c795`) via the `land:` `defineVariant`. Rotation requires the
+  local `ios/` project to allow landscape — `app.json` now says
+  `orientation: default`, but `expo run:ios` does not re-sync orientation
+  into an existing generated project, so edit
+  `UISupportedInterfaceOrientations` in `ios/example/Info.plist` and rebuild
+  (local-only; `ios/` is never committed).
+- **Custom frontend box** — `card-pad card-radius bg-indigo-500` from the
+  handwritten artifact: padding 20, radius 14, background `#615fff`; no
+  WF2001 in the Metro log (the classes come from the second
+  `registerArtifact` call in `.windforge/generated.js`).
+- **backend row** — reads `fabric`: `installNativeDelivery` still owns
+  backend selection, per the `setBackend` ordering contract
+  (`docs/specs/EXTENSION_API_SPEC.md`).
+
+Troubleshooting notes from the Phase 8 verification runs:
+
+- **"Open in Expo Go?" alert on every `simctl openurl`** — stale
+  LaunchServices registration left behind by Expo Go (even after
+  uninstalling it). The alert renders inside the simulated screen and dims
+  it, so sampled pixel colors come out ~0.8× darker. Fix: reboot the
+  simulator (`xcrun simctl shutdown booted && xcrun simctl boot booted`).
+- **Edited `windforge.config.cjs`?** — same rule as `global.css`: the
+  artifact compiles once at Metro startup, so restart Metro and terminate
+  the app before re-verifying.
+
 ## Troubleshooting
 
 - **"WindforgeStyle TurboModule not found" warning** — the app is running

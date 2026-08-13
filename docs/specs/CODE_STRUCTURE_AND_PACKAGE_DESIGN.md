@@ -159,7 +159,21 @@ IR → React Native       ❌
 Compiler → Nitro        ❌
 Parser → Reanimated     ❌
 Web backend → Fabric    ❌
+Extension SDK → Tailwind ❌
 ```
+
+## Extension SDK boundary
+
+Status (2026-08-13, Phase 8): `packages/extension-sdk` exists with zero
+dependencies — `defineUtility`/`defineVariant`/`defineTokens`/`definePreset`
+return plain descriptors and `renderExtensions` lowers them to CSS text
+(`docs/specs/EXTENSION_API_SPEC.md`). Dependency direction:
+`@windforge/metro` depends on `@windforge/extension-sdk` (renders
+descriptors to `extraCss` before compilation) while `@windforge/tailwind`
+only receives the `extraCss` string and never depends on the SDK. The
+custom frontend interface (`WindforgeFrontend`) lives in `@windforge/metro`
+and imports `RuntimeArtifact` from `@windforge/tailwind`; the custom
+backend interface (`setBackend`) lives in `@windforge/react-native`.
 
 ## Native package boundary
 
