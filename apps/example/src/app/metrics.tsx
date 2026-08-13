@@ -12,6 +12,11 @@
  *    simulator to watch the box blend 0 (light) ↔ 1 (dark) on the UI thread,
  *    with a render counter proving 0 React renders per frame;
  *  - runtime diagnostics row.
+ *
+ * The screen is deliberately light-first (dark palette behind `dark:`
+ * variants): light mode renders pale backgrounds so a dark-mode flip is a
+ * visibly dramatic change — this is the screen that demos the theme
+ * transition.
  */
 import { memo, useEffect, useRef, useState } from 'react';
 import { ScrollView } from 'react-native';
@@ -29,9 +34,9 @@ import { useAnimatedThemeProgress } from '@windforge/reanimated';
 /** One row in the metrics panel. */
 function MetricRow({ label, value }: { label: string; value: string }) {
   return (
-    <View className="flex-row items-center justify-between border-b border-zinc-800 py-1.5">
-      <Text className="text-xs text-zinc-400 dark:text-zinc-500">{label}</Text>
-      <Text className="text-xs font-medium text-zinc-100 dark:text-zinc-300">{value}</Text>
+    <View className="flex-row items-center justify-between border-b border-zinc-200 py-1.5 dark:border-zinc-800">
+      <Text className="text-xs text-zinc-600 dark:text-zinc-500">{label}</Text>
+      <Text className="text-xs font-medium text-zinc-900 dark:text-zinc-300">{value}</Text>
     </View>
   );
 }
@@ -58,7 +63,7 @@ const ThemeTransitionBox = memo(function ThemeTransitionBox() {
     borderWidth: 2,
     alignItems: 'center' as const,
     justifyContent: 'center' as const,
-    backgroundColor: interpolateColor(progress.value, [0, 1], ['#f4f4f5', '#18181b']),
+    backgroundColor: interpolateColor(progress.value, [0, 1], ['#ffffff', '#18181b']),
     borderColor: interpolateColor(progress.value, [0, 1], ['#a1a1aa', '#3f3f46']),
   }));
   return (
@@ -66,7 +71,7 @@ const ThemeTransitionBox = memo(function ThemeTransitionBox() {
       <Animated.View style={animatedStyle}>
         <Text className="text-xs font-semibold text-accent">light ↔ dark</Text>
       </Animated.View>
-      <Text className="text-xs text-zinc-400 dark:text-zinc-500">
+      <Text className="text-xs text-zinc-600 dark:text-zinc-500">
         React renders of the box: {renders.current} — flip dark mode to crossfade
       </Text>
     </View>
@@ -103,19 +108,19 @@ export default function MetricsScreen() {
   }, []);
 
   return (
-    <View className="flex-1 bg-zinc-950 dark:bg-zinc-900">
+    <View className="flex-1 bg-zinc-100 dark:bg-zinc-950">
       <SafeAreaView style={{ flex: 1 }}>
         <ScrollView style={mainStyle}>
-          <Text className="text-2xl font-bold text-zinc-100 dark:text-zinc-300">Metrics</Text>
-          <Text className="mt-1 text-sm text-zinc-400 dark:text-zinc-500">
+          <Text className="text-2xl font-bold text-zinc-900 dark:text-zinc-300">Metrics</Text>
+          <Text className="mt-1 text-sm text-zinc-600 dark:text-zinc-500">
             Live platform metrics, layout-direction variants, and the animated theme progress.
           </Text>
 
           {/* Metrics panel: live values from the capability layer. */}
-          <Text className="mt-4 text-sm font-semibold text-zinc-100 dark:text-zinc-300">
+          <Text className="mt-4 text-sm font-semibold text-zinc-900 dark:text-zinc-300">
             Platform metrics (useMetrics)
           </Text>
-          <View className="mt-2 rounded-lg bg-zinc-900 p-3 dark:bg-zinc-800">
+          <View className="mt-2 rounded-lg bg-white p-3 dark:bg-zinc-800">
             <MetricRow label="colorScheme" value={metrics.colorScheme} />
             <MetricRow label="platform" value={metrics.platform} />
             <MetricRow label="window" value={`${metrics.windowWidth}x${metrics.windowHeight}`} />
@@ -126,7 +131,7 @@ export default function MetricsScreen() {
           </View>
 
           {/* Layout-direction variants: rtl: / ltr: swap color and text. */}
-          <Text className="mt-4 text-sm font-semibold text-zinc-100 dark:text-zinc-300">
+          <Text className="mt-4 text-sm font-semibold text-zinc-900 dark:text-zinc-300">
             Layout-direction variants (rtl: / ltr:)
           </Text>
           <View className="mt-2 gap-2">
@@ -135,23 +140,23 @@ export default function MetricsScreen() {
                 base accent · ltr:bg-indigo-500 · rtl:bg-emerald-500
               </Text>
             </View>
-            <View className="rounded-lg bg-zinc-800 p-3 dark:bg-zinc-700">
-              <Text className="text-sm text-zinc-200 rtl:text-emerald-300 ltr:text-indigo-300">
+            <View className="rounded-lg bg-zinc-200 p-3 dark:bg-zinc-700">
+              <Text className="text-sm text-zinc-700 dark:text-zinc-300 ltr:text-indigo-600 rtl:text-emerald-600 dark:ltr:text-indigo-300 dark:rtl:text-emerald-300">
                 direction-aware text color (currently {metrics.layoutDirection})
               </Text>
             </View>
           </View>
 
           {/* Theme transition: progress-driven crossfade. */}
-          <Text className="mt-4 text-sm font-semibold text-zinc-100 dark:text-zinc-300">
+          <Text className="mt-4 text-sm font-semibold text-zinc-900 dark:text-zinc-300">
             Animated theme progress (useAnimatedThemeProgress)
           </Text>
           <ThemeTransitionBox />
 
-          <Text className="mt-4 text-sm font-semibold text-zinc-100 dark:text-zinc-300">
+          <Text className="mt-4 text-sm font-semibold text-zinc-900 dark:text-zinc-300">
             Runtime diagnostics
           </Text>
-          <Text className="mt-2 text-xs text-zinc-500">{diagnostics}</Text>
+          <Text className="mt-2 text-xs text-zinc-600 dark:text-zinc-500">{diagnostics}</Text>
         </ScrollView>
       </SafeAreaView>
     </View>

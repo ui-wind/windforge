@@ -229,7 +229,10 @@ Check the following:
   the system appearance.
 - **rtl:/ltr: boxes** — in an ltr build the first box renders indigo
   (`ltr:bg-indigo-500` overrides the base `bg-accent`) and the second caption
-  renders indigo-300; an RTL build swaps both to the emerald variants.
+  renders indigo-600 in light mode, indigo-300 in dark (stacked
+  `dark:ltr:text-indigo-300` wins over the single `ltr:` variant because
+  runtime merge follows class-string order — stacked variants go last); an
+  RTL build swaps both to the emerald variants.
 - **theme transition box** — flip with
   `xcrun simctl ui booted appearance dark`: the box crossfades light ↔ dark
   over 400ms (`useAnimatedThemeProgress` + `interpolateColor` on the UI
@@ -241,10 +244,13 @@ Check the following:
 
 Reference measurements (iPhone 17 Pro simulator, dev client, 2026-08-13):
 panel values as above; ltr box pixel-exact at the artifact values (`#615fff`
-background, `#a3b3ff` text); crossfade settles at `#18181b` with the render
-counter still 1; appearance reports show `styleUpdates` 55→74 and
-`directCommits` 1 across the session's flips. These numbers back the Phase 7
-claims in `docs/IMPLEMENTATION_ROADMAP.md`.
+background; caption text `#4f39f6` light / `#a3b3ff` dark); the screen is
+light-first (`bg-zinc-100` root, white panel) so flipping to dark is a
+full-screen change (root `#f4f4f5` → `#09090b`, panel `#ffffff` → `#27272a`);
+crossfade settles at `#18181b` with the render counter still 1; appearance
+reports show `styleUpdates` 55→74 and `directCommits` 1 across the session's
+flips. These numbers back the Phase 7 claims in
+`docs/IMPLEMENTATION_ROADMAP.md`.
 
 Note: `@windforge/metro` compiles the artifact once at Metro startup (no file
 watcher). After editing `global.css` or adding class literals, restart Metro

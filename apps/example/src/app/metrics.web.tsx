@@ -12,9 +12,9 @@ import { Text } from '@windforge/react-native';
 
 export default function MetricsScreenWeb() {
   return (
-    <View className="flex-1 bg-zinc-950 dark:bg-zinc-900">
+    <View className="flex-1 bg-zinc-100 dark:bg-zinc-950">
       <SafeAreaView style={{ flex: 1 }}>
-        <Text className="p-6 text-sm text-zinc-400 dark:text-zinc-500">
+        <Text className="p-6 text-sm text-zinc-600 dark:text-zinc-500">
           Metrics screen is native-only in Phase 7 — run the iOS simulator
           (docs/guides/NATIVE_SETUP_IOS.md).
         </Text>
