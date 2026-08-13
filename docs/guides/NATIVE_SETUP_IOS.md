@@ -110,6 +110,85 @@ DevTools profiler or console assertions if you need evidence for a claim;
 see `docs/specs/PERFORMANCE_BENCHMARK_SPEC.md` for the benchmark
 methodology.
 
+## Pixel verification tooling
+
+Screenshots alone do not prove a theme applied — the Phase 9 runbooks assert
+exact colors with `scripts/pixel-sample.mjs` (pure `pngjs`, no native deps):
+
+```bash
+xcrun simctl io booted screenshot /tmp/wf-ios/home.png
+node scripts/pixel-sample.mjs /tmp/wf-ios/home.png 10,1500 90,703
+# #09090b   ← Home root background (light)
+# #3b82f6   ← bg-accent surface
+```
+
+Sample coordinates are verified on the iPhone 17 Pro simulator
+(1206×2622 shots): `(10,1500)` is root background, `(90,703)` is the
+accent card. Keep samples off text glyphs — glyph edges read blended
+colors (e.g. `#dde9fd` instead of `#3b82f6`). The Home emerald card
+samples `#00bc7d`, which is the sRGB rendering of Tailwind v4's OKLCH
+`emerald-500` — exact-match expectations apply to custom hex `@theme`
+tokens (`#3b82f6`, `#09090b`, `#18181b`), not to the default palette.
+
+Known colors on the Home screen: root background `#09090b` light /
+`#18181b` dark, accent `#3b82f6`. The script prints one `#rrggbb` per
+coordinate and exits 2 on a bad file or out-of-range coordinate (message
+includes the image `W×H`). It is the same tool the Android and web
+runbooks use, so matrix evidence is comparable across platforms.
+
+## Screenshot matrix automation
+
+Deep links cannot drive an automated matrix on iOS 26 (the "Open in …?"
+confirmation blocks every `simctl openurl` — see Troubleshooting), and
+`simctl` has no tap/HID injection. Instead the app ships a dev-only route
+hook: `apps/example/src/components/matrix-dev-route.ts` exports
+`useMatrixRoute()` (mounted in `src/app/_layout.tsx`), which — only in
+`__DEV__` — fetches `http://localhost:8082/route` on mount and
+`router.replace`s to whatever path the file names. Navigation per screen
+is then a plain `simctl terminate` + `simctl launch` cycle, which never
+triggers the confirmation.
+
+1. Start the route server on the host:
+
+   ```bash
+   echo "/" > /tmp/wf-matrix-route.txt
+   node -e 'require("http").createServer((q,s)=>{s.setHeader("Access-Control-Allow-Origin","*");try{s.end(require("fs").readFileSync("/tmp/wf-matrix-route.txt","utf8"))}catch(e){s.end("/")}}).listen(8082)' &
+   ```
+
+2. Drive the matrix — for each route × appearance, write the route file,
+   relaunch, wait for Metro to settle, screenshot:
+
+   ```bash
+   for pair in "/ home" "/explore explore" "/stress stress" \
+               "/animation animation" "/metrics metrics" \
+               "/extensions extensions"; do
+     route="${pair%% *}"; name="${pair##* }"
+     echo "$route" > /tmp/wf-matrix-route.txt
+     xcrun simctl terminate booted dev.windforge.example
+     sleep 1
+     xcrun simctl launch booted dev.windforge.example
+     sleep 9
+     xcrun simctl io booted screenshot "/tmp/wf-ios/$name-light.png"
+   done
+   ```
+
+   Flip `xcrun simctl ui booted appearance dark|light` between passes.
+   With no server running the fetch fails silently and the app stays on
+   its default route, so the hook never affects interactive runs.
+
+3. Pixel-verify each shot with `scripts/pixel-sample.mjs` (coordinates in
+   the section above).
+
+**Landscape is manual-only.** Editing the installed app's
+`UISupportedInterfaceOrientations` (plist + `simctl install`) only changes
+which orientations the app *accepts* — the simulated device's orientation
+is owned by the Simulator app window, not the app or the device defaults
+(`DevicePreferences.<UDID>.SimulatorWindowOrientation` does not rotate the
+framebuffer either; verified during the Phase 9 run). To capture landscape
+screens, rotate with the Simulator window (Cmd+← / Cmd+→) and screenshot by
+hand; the Phase 8 `land:` verification (`#31c795` emerald) was done this
+way. The automated matrix covers portrait × light/dark.
+
 ## Stress test runbook (Phase 4 kill criteria)
 
 The example app ships a stress screen (`apps/example/src/app/stress.tsx`)
@@ -206,10 +285,11 @@ FPS 60 with two infinite keyframes + a 500ms transition running; exactly 1
 render per toggle, 0 per frame; diagnostics flat between toggles. These
 numbers back the Phase 6 claims in `docs/IMPLEMENTATION_ROADMAP.md`.
 
-Note: on this machine the installed dev build predates the
-`dev.windforge.example` bundle identifier rename — `xcrun simctl
-listapps booted` shows the installed id (`com.vule94.example`), and
-`simctl launch` must target that id, not the one in `app.json`.
+Note: if `simctl listapps` shows a bundle id that differs from `app.json`
+(e.g. an identifier from before a rename), the local `ios/` project predates
+the config — `expo run:ios` does not re-sync the bundle identifier into an
+existing generated project. Regenerate with `npx expo prebuild --platform
+ios --clean` and uninstall the stale app from the simulator.
 
 ## Metrics screen verification (Phase 7)
 
@@ -291,11 +371,13 @@ Check the following:
 
 Troubleshooting notes from the Phase 8 verification runs:
 
-- **"Open in Expo Go?" alert on every `simctl openurl`** — stale
-  LaunchServices registration left behind by Expo Go (even after
-  uninstalling it). The alert renders inside the simulated screen and dims
-  it, so sampled pixel colors come out ~0.8× darker. Fix: reboot the
-  simulator (`xcrun simctl shutdown booted && xcrun simctl boot booted`).
+- **"Open in …?" alert on every `simctl openurl`** — iOS 26 shows a
+  confirmation for externally opened custom-scheme URLs, including `simctl
+  openurl`, so deep-link driven automation stalls on the alert (it renders
+  inside the simulated screen and dims it, so sampled pixel colors come out
+  wrong). A simulator reboot clears a pending alert. For automated matrix
+  runs, navigate with the dev-only route hook instead — see "Screenshot
+  matrix automation" above.
 - **Edited `windforge.config.cjs`?** — same rule as `global.css`: the
   artifact compiles once at Metro startup, so restart Metro and terminate
   the app before re-verifying.
@@ -310,6 +392,13 @@ Troubleshooting notes from the Phase 8 verification runs:
   components never mounted via the Windforge styled primitives.
 - **Stale native code after changes** — `npx expo prebuild --clean && pod
   install` in the app's `ios/` directory.
+- **Appearance flips stop applying** (`simctl ui booted appearance light`
+  reads back correctly but the guest OS stays dark) — the running
+  Simulator's override channel is stuck. `osascript -e 'quit app
+  "Simulator"'` may return success while leaving the process alive; do a
+  full cycle instead: `xcrun simctl shutdown <udid>`, `killall Simulator`,
+  `xcrun simctl boot <udid>`, `open -a Simulator`. Observed in Phase 9
+  after a long-lived Simulator session.
 
 ## Limitations
 

@@ -92,7 +92,7 @@ Legend:
 | IntelliSense metadata | P1 | |
 | source maps | P1 | |
 | HMR | P0 | |
-| monorepo support | P0 | |
+| monorepo support | P0 | ✅ Phase 9: pnpm+turbo workspace; CI runs build/typecheck/test across all packages (`.github/workflows/ci.yml`) |
 | cache inspection | P1 | |
 | compiler debug mode | P1 | |
 | generated IR inspection | P1 | |

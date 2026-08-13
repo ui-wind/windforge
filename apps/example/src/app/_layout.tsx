@@ -14,11 +14,13 @@ import 'windforge/generated';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
 import AppTabs from '@/components/app-tabs';
+import { useMatrixRoute } from '@/components/matrix-dev-route';
 
 SplashScreen.preventAutoHideAsync();
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
+  useMatrixRoute(); // dev-only screenshot-matrix hook (no-op without the route server)
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <WindforgeSafeAreaProvider>

@@ -510,16 +510,136 @@ tab bar). Verification runbook: `docs/guides/NATIVE_SETUP_IOS.md`.
 
 ## Phase 9 — Hardening
 
-Run:
+Done:
 
-- iOS matrix
-- Android matrix
-- Web matrix
-- Expo development builds
-- release builds
-- compiler stress tests
-- monorepo tests
-- benchmark suite
+- ✅ Compatibility declarations (Rule 10): `react-native` peer tightened to
+  `>=0.86 <0.87` in `native`/`react-native`/`reanimated` (reanimated
+  previously claimed unverified 0.83–0.85), optional `react-native-web`
+  peer `>=0.21 <0.22`; verified-matrix table in
+  `docs/specs/VERSION_COMPATIBILITY.md`.
+- ✅ Compiler stress tests (`packages/tailwind/tests/stress.test.ts`):
+  full-utility-surface sweep + large-N (4,748 candidates) with
+  determinism and diagnostic assertions and a shape snapshot.
+- ✅ Cross-process determinism
+  (`packages/metro/tests/determinism-cross-process.test.ts` +
+  `tests/helpers/print-compiled.mjs`): separate `node` processes produce
+  byte-identical generated modules (extension trio included); turbo
+  `test` override in `packages/metro` adds the package's own build.
+- ✅ Benchmark suite expansion: `packages/tailwind/tests/compile.bench.ts`,
+  `packages/metro/tests/compiler.bench.ts`, `scripts/bench-env.mjs`
+  reproducibility record, `pnpm bench` at the root, first real entry in
+  `docs/reference/BENCHMARK_RECORDS.md`.
+- ✅ CI (`.github/workflows/ci.yml`): push/PR on ubuntu-latest, pnpm
+  frozen-lockfile, turbo build → typecheck → test with a local-only turbo
+  cache via actions/cache.
+- ✅ Android matrix, first run (E1): dev build on Pixel_9 (arm64-v8a),
+  js-baseline backend with the designed warn-once degradation;
+  Home/Explore/Stress light+dark pixel-verified; runbook in
+  `docs/guides/NATIVE_SETUP_ANDROID.md`.
+- ✅ iOS matrix (E2): six screens × portrait × light/dark pixel-verified;
+  landscape documented as manual-only; iOS Release build on the simulator
+  boots and renders from the embedded bundle (Metro stopped), light+dark.
+- ✅ Web matrix (E3): static export (8 routes), headless Chrome
+  screenshots of six routes pixel-verified; runbook in
+  `docs/guides/WEB_SETUP.md`. Three real web defects found and fixed:
+  missing tab triggers in `app-tabs.web.tsx`, `getWindforgeStyleModule()`
+  touching `TurboModuleRegistry` on web (react-native-web does not export
+  it — `Platform.OS` guard now short-circuits first), and placeholder
+  screens importing View/Text from plain `react-native` (silently ignores
+  `className` on web) plus the web Tabs height-collapse
+  (`minHeight: '100vh'` + `pt-20` convention in the `.web.tsx` files).
+- ✅ Android release (E4): `expo run:android --variant release` green
+  end-to-end; release buildType signed with the template debug config (no
+  keystore); embedded-bundle boot verified light+dark with Metro stopped.
+- ✅ Monorepo tests (F): the turbo task graph in CI *is* the monorepo test
+  (decision below); cross-process determinism covers the workspace
+  artifact path.
+- ✅ Tooling: `scripts/pixel-sample.mjs` (pngjs) shared by all three
+  matrices.
+
+Measured (Rule 11; build-time numbers from
+`docs/reference/BENCHMARK_RECORDS.md`, 2026-08-13 entry, Apple M4 / Node
+22.22.2):
+
+| measurement | result |
+| --- | --- |
+| stress sweep | 118 supported candidates + controls → artifact 85 classes / 7 conditions, hash `2d860987`; zero WF1001/1002/1003/1005, exactly one control WF1004; two builds byte-identical |
+| large-N stress | 4,748 candidates → 4,748 classes; two builds 274 ms wall combined; byte-identical |
+| cross-process determinism | 3 separate `node` processes: generated-module bytes and 8-hex hash identical |
+| cold compile (sweep surface) | mean 1.85 ms (p75 2.34, p99 4.79) |
+| incremental build, cache-busted (28 candidates) | mean 0.0005 ms |
+| incremental build, cache-busted (4,748 candidates) | mean 0.0207 ms |
+| candidate→IR lowering (4,748-class stylesheet) | median 17.5 ms |
+| `compileWindforge` e2e fixture app | mean 3.37 ms without extensions, 3.84 ms with the extension trio |
+| iOS matrix | 12 portrait screenshots, exact pixels: root `#09090b` light / `#18181b` dark, accent `#3b82f6`, emerald card `#00bc7d` (OKLCH sRGB of `emerald-500`) |
+| iOS release | embedded bundle boots with Metro down; light/dark exact at (10,1500) |
+| Android first debug build | `BUILD SUCCESSFUL in 5m 20s` (AGP 8.12.0, Gradle 9.3.1, JDK 17); js-baseline `available: false` as designed |
+| Android release | cold release compile 5m 40s, warm rerun 5–19s; APK ~104MB; embedded bundle light `#09090b` / dark `#18181b` with Metro down |
+| web matrix | 6 routes pixel-verified: roots `#09090b` (index/explore/stress/animation) and `#f4f4f5` (metrics/extensions), stress panel `#f4f4f5` |
+
+Scope notes:
+
+- Landscape is manual-only in the iOS matrix: the device framebuffer is
+  owned by the Simulator window (Cmd+←/→); per-device orientation
+  `defaults`/PlistBuddy keys were verified to change accepted orientations
+  but not the framebuffer. Automated coverage is portrait × light/dark.
+- Web screenshots are light-mode only; dark needs CDP
+  `Emulation.setEmulatedMedia`, not scripted in the runbook.
+- Android native delivery stays deferred (Rule 14): the matrix verifies
+  the js-baseline degradation path, not a fabric-Android adapter.
+- Two environment gotchas hit during E4 (documented in
+  NATIVE_SETUP_ANDROID.md, not product defects): concurrent gradle builds
+  race on the shared `.cxx` CMake directory (x86 ninja failure), and the
+  6GB emulator userdata image fills up after debug+release installs
+  (`INSTALL_FAILED_INSUFFICIENT_STORAGE`).
+
+### Decisions
+
+These are the Phase 9 decision records (Rule 13).
+
+- **Stress tests live in `@windforge/tailwind`.** It owns candidate
+  injection; the snapshot (classes/conditions/hash) is updated only on
+  intended compiler/Tailwind changes (`vitest -u` with review), never to
+  make a red build green.
+- **Cross-process determinism spawns the built dist.** The helper imports
+  `dist/index.js` and runs in separate `node` processes, so the test
+  proves the shipped artifact is deterministic, not just the TS sources;
+  `packages/metro` gets a turbo `test` override (`^build` + own `build`)
+  because the default graph only builds upstream packages.
+- **Benchmarks are local-first, records are real runs only.** `pnpm bench`
+  + `scripts/bench-env.mjs` produce a paste-ready environment record;
+  `BENCHMARK_RECORDS.md` accepts measured entries exclusively (AGENTS.md:
+  no invented numbers). Benches are not a CI gate.
+- **CI is one ubuntu workflow without a lint step.** `expo lint` fails
+  deterministically on example-app hook-rule errors today; adding a red
+  lint step would gate the workspace on unrelated churn. Simulator,
+  emulator and web pixel runs stay manual runbooks (they need macOS/Xcode,
+  SDK images, and a display server).
+- **Monorepo tests = the turbo graph in CI.** build/typecheck/test across
+  all packages plus the cross-process workspace-artifact test cover the
+  failure classes a bespoke workspace-integrity suite would add; revisit
+  only if a real workspace bug appears that the graph misses.
+- **Peer ranges track the verified matrix.** `>=0.86 <0.87` for
+  `react-native` (only 0.86.2 exercised), reanimated tightened from
+  `>=0.83` to `>=0.86` (0.83–0.85 never ran), `react-native-web` optional
+  `>=0.21 <0.22`.
+- **Android verified on js-baseline; fabric-Android deferred** (Rule 14
+  transparency). The warn-once degradation is the tested contract.
+- **pngjs over sharp** for `pixel-sample.mjs`: pure JS, no postinstall
+  outside the pnpm allowlist.
+- **Web placeholder conventions from the three live defects.** Styled
+  primitives come from `@windforge/react-native` (plain RN ignores
+  `className` on web); web-only screen roots set
+  `minHeight: '100vh'` + `pt-20` (Tabs root has no height, floating bar
+  overlays ~66px); any native-module accessor guards
+  `Platform.OS === 'web'` *before* touching `TurboModuleRegistry`.
+- **Release builds use template debug signing; no keystores.** Both
+  platforms verified with the embedded bundle by stopping Metro and
+  launching cold; signing/keystore work belongs to a release-engineering
+  phase.
+
+Verification runbooks: `docs/guides/NATIVE_SETUP_IOS.md`,
+`docs/guides/NATIVE_SETUP_ANDROID.md`, `docs/guides/WEB_SETUP.md`.
 
 ## Phase 10 — Flutter research
 

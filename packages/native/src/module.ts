@@ -7,7 +7,7 @@
  * provide. So there is no codegen spec file — the TS types below mirror
  * the protocol 1:1 and the ObjC++ host implements it by hand.
  */
-import { TurboModuleRegistry } from 'react-native';
+import { Platform, TurboModuleRegistry } from 'react-native';
 
 import type { ReactNativeStyle } from '@windforge/react-native';
 
@@ -46,5 +46,10 @@ interface NativeWindforgeStyle {
  * absence is a supported configuration that degrades to the JS baseline.
  */
 export function getWindforgeStyleModule(): NativeWindforgeStyle | null {
+  // react-native-web does not export TurboModuleRegistry — touching it on
+  // web throws, so the web no-op must short-circuit before the lookup.
+  if (Platform.OS === 'web') {
+    return null;
+  }
   return TurboModuleRegistry.get('WindforgeStyle') as NativeWindforgeStyle | null;
 }
