@@ -7,12 +7,15 @@
  */
 import {
   hashCanonical,
+  type AnimationIR,
   type ConditionIR,
   type DeclarationIR,
+  type KeyframeIR,
+  type TransitionIR,
 } from '@windforge/ir';
-import { collectStylesheet, type CollectedRule } from './css/collect.js';
-import { lowerDeclaration, type LowerContext } from './css/lower.js';
-import type { VariableMap } from './css/resolve.js';
+import { collectStylesheet } from './css/collect.js';
+import { collectKeyframes } from './css/collect-keyframes.js';
+import { lowerRuleDeclarations } from './css/lower.js';
 import { conditionId, specToConditionIR, type Diagnostic } from './types.js';
 
 /** Artifact format version (independent of IR version). */
@@ -27,6 +30,10 @@ export type VariantEntry = {
 export type ClassEntry = {
   base: DeclarationIR[];
   variants?: VariantEntry[];
+  /** Animation metadata lowered from `animation-*` / `animate-*` utilities. */
+  animation?: AnimationIR;
+  /** Transition metadata lowered from `transition-*` utilities. */
+  transition?: TransitionIR;
 };
 
 export type RuntimeArtifact = {
@@ -64,25 +71,32 @@ function mergeDeclarations(
   return [...byProperty.values()];
 }
 
-function lowerRule(
-  rule: CollectedRule,
-  variables: VariableMap,
-  diagnostics: Diagnostic[],
+/** Merge transition metadata per field: the later rule wins per field. */
+function mergeTransition(
+  existing: TransitionIR | undefined,
+  incoming: TransitionIR,
+): TransitionIR {
+  if (!existing) return incoming;
+  const merged: TransitionIR = { properties: incoming.properties };
+  const duration = incoming.duration ?? existing.duration;
+  if (duration) merged.duration = duration;
+  const delay = incoming.delay ?? existing.delay;
+  if (delay) merged.delay = delay;
+  const timingFunction = incoming.timingFunction ?? existing.timingFunction;
+  if (timingFunction) merged.timingFunction = timingFunction;
+  return merged;
+}
+
+function toDeclarationIRs(
+  lowered: Array<{ property: DeclarationIR['property']; value: DeclarationIR['value'] }>,
 ): DeclarationIR[] {
-  const ctx: LowerContext = { diagnostics, fontSizePx: null };
-  const out: DeclarationIR[] = [];
   let order = 0;
-  for (const declaration of rule.declarations) {
-    for (const lowered of lowerDeclaration(declaration, variables, ctx)) {
-      out.push({
-        property: lowered.property,
-        value: lowered.value,
-        priority: 10,
-        sourceOrder: order++,
-      });
-    }
-  }
-  return out;
+  return lowered.map((declaration) => ({
+    property: declaration.property,
+    value: declaration.value,
+    priority: 10,
+    sourceOrder: order++,
+  }));
 }
 
 /**
@@ -94,6 +108,7 @@ function lowerRule(
 export function buildArtifact(css: string, irVersion: number): BuildResult {
   const collected = collectStylesheet(css);
   const diagnostics = [...collected.diagnostics];
+  const keyframes = collectKeyframes(collected.keyframes, collected.variables, diagnostics);
 
   const conditionMap = new Map<string, ConditionIR>();
   const styles: Record<string, ClassEntry> = {};
@@ -103,16 +118,32 @@ export function buildArtifact(css: string, irVersion: number): BuildResult {
     ([a], [b]) => (a < b ? -1 : a > b ? 1 : 0),
   )) {
     let base: DeclarationIR[] = [];
+    let animation: AnimationIR | undefined;
+    let transition: TransitionIR | undefined;
     const variantGroups = new Map<string, VariantEntry>();
 
     for (const rule of rules) {
-      const declarations = lowerRule(rule, collected.variables, diagnostics);
-      if (declarations.length === 0) continue;
+      const lowered = lowerRuleDeclarations(
+        rule.declarations,
+        collected.variables,
+        keyframes,
+        diagnostics,
+        rule.locals,
+      );
 
       if (rule.conditions.length === 0) {
-        base = mergeDeclarations(base, declarations);
+        if (lowered.declarations.length > 0) {
+          base = mergeDeclarations(base, toDeclarationIRs(lowered.declarations));
+        }
+        // Animation metadata rides on base rules (utility classes are not
+        // emitted inside @media): last rule wins for animation, per-field
+        // merge for transition (composed-string semantics).
+        if (lowered.animation) animation = lowered.animation;
+        if (lowered.transition) transition = mergeTransition(transition, lowered.transition);
         continue;
       }
+
+      if (lowered.declarations.length === 0) continue;
 
       const conditionIds = rule.conditions.map((spec) => conditionId(spec));
       for (const spec of rule.conditions) {
@@ -122,17 +153,22 @@ export function buildArtifact(css: string, irVersion: number): BuildResult {
       const key = conditionIds.join('|');
       const existing = variantGroups.get(key);
       if (existing) {
-        existing.declarations = mergeDeclarations(existing.declarations, declarations);
+        existing.declarations = mergeDeclarations(
+          existing.declarations,
+          toDeclarationIRs(lowered.declarations),
+        );
       } else {
-        variantGroups.set(key, { conditionIds, declarations });
+        variantGroups.set(key, { conditionIds, declarations: toDeclarationIRs(lowered.declarations) });
       }
     }
 
-    if (base.length === 0 && variantGroups.size === 0) continue;
+    if (base.length === 0 && variantGroups.size === 0 && !animation && !transition) continue;
     const entry: ClassEntry = { base };
     if (variantGroups.size > 0) {
       entry.variants = [...variantGroups.values()];
     }
+    if (animation) entry.animation = animation;
+    if (transition) entry.transition = transition;
     styles[className] = entry;
     dependencies[className] = entry.variants
       ? [...new Set(entry.variants.flatMap((variant) => variant.conditionIds))].sort()

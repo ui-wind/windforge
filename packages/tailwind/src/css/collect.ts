@@ -14,7 +14,7 @@ import { transform } from 'lightningcss';
 import type { ConditionSpec, Diagnostic } from '../types.js';
 import { isPointerCapabilityFailure, mediaDiagnostic, parseMediaQuery } from './media.js';
 import type { VariableMap } from './resolve.js';
-import { normalizeTokens, type CssToken } from './token-print.js';
+import { normalizeTokens, scalarValue, type CssToken } from './token-print.js';
 
 type AnyRecord = Record<string, unknown>;
 
@@ -29,11 +29,17 @@ export type CollectedDeclaration = {
 export type CollectedRule = {
   conditions: ConditionSpec[];
   declarations: CollectedDeclaration[];
+  /** Custom properties declared inside this rule (e.g. `--tw-scale-x`);
+   * they shadow theme vars when substituting this rule's declarations. */
+  locals?: VariableMap;
 };
 
 export type CollectedStylesheet = {
   variables: VariableMap;
   classes: Map<string, CollectedRule[]>;
+  /** Raw top-level @keyframes rule values; lowered to KeyframeIR by the
+   * artifact builder (collect-keyframes). */
+  keyframes: AnyRecord[];
   diagnostics: Diagnostic[];
 };
 
@@ -45,17 +51,77 @@ function selectorName(selector: Selector): string | undefined {
   return typeof name === 'string' ? name : undefined;
 }
 
+/**
+ * Flatten one lightningcss declaration record into collected declarations.
+ * Shared by style-rule collection and @keyframes bodies (collect-keyframes).
+ * `custom` records are harvested into `variables` when `intoCustomProps`.
+ */
+export function flattenDeclaration(
+  declaration: AnyRecord,
+  variables: VariableMap,
+  intoCustomProps: boolean,
+): CollectedDeclaration[] {
+  const property = declaration.property as string;
+
+  // Unparsed values (var()/calc() etc.): the real property id lives in
+  // `value.propertyId` and the value is a raw token list.
+  if (property === 'unparsed') {
+    const unparsed = declaration.value as AnyRecord;
+    const propertyId = unparsed.propertyId as AnyRecord | undefined;
+    const tokens = unparsed.value as CssToken[] | undefined;
+    const loc = declaration.loc as AnyRecord | undefined;
+    if (typeof propertyId?.property === 'string' && Array.isArray(tokens)) {
+      const collected: CollectedDeclaration = {
+        property: propertyId.property,
+        value: normalizeTokens(tokens),
+        unparsed: true,
+      };
+      if (loc && typeof loc.line === 'number') collected.line = loc.line;
+      if (loc && typeof loc.column === 'number') collected.column = loc.column;
+      return [collected];
+    }
+    return [];
+  }
+
+  if (property === 'custom') {
+    if (intoCustomProps) {
+      const value = declaration.value as AnyRecord;
+      const tokens = value.value as CssToken[] | undefined;
+      if (typeof value.name === 'string' && Array.isArray(tokens)) {
+        const normalized = normalizeTokens(tokens);
+        // CSS-wide keyword values (e.g. the @property fallback shim's
+        // `--tw-duration: initial`) can never resolve a var() reference.
+        const significant = normalized.filter((t) => t.type !== 'white-space');
+        const only = significant[0];
+        if (significant.length === 1 && only?.type === 'ident' && scalarValue(only) === 'initial') {
+          return [];
+        }
+        variables.set(value.name, normalized);
+      }
+    }
+    return [];
+  }
+
+  const loc = declaration.loc as AnyRecord | undefined;
+  const collected: CollectedDeclaration = {
+    property,
+    value: declaration.value,
+    unparsed: false,
+  };
+  if (loc && typeof loc.line === 'number') collected.line = loc.line;
+  if (loc && typeof loc.column === 'number') collected.column = loc.column;
+  return [collected];
+}
+
 export function collectStylesheet(css: string): CollectedStylesheet {
   const variables: VariableMap = new Map();
   const classes = new Map<string, CollectedRule[]>();
+  const keyframes: AnyRecord[] = [];
   const diagnostics: Diagnostic[] = [];
   const seenPseudoDiagnostics = new Set<string>();
   let pointerCapabilityDiagnosticEmitted = false;
 
-  function collectDeclarations(
-    rule: AnyRecord,
-    intoCustomProps: boolean,
-  ): CollectedDeclaration[] {
+  function collectDeclarations(rule: AnyRecord, target: VariableMap): CollectedDeclaration[] {
     const declarationsBlock = rule.declarations as
       | { importantDeclarations: AnyRecord[]; declarations: AnyRecord[] }
       | undefined;
@@ -66,47 +132,7 @@ export function collectStylesheet(css: string): CollectedStylesheet {
     ];
     const out: CollectedDeclaration[] = [];
     for (const declaration of all) {
-      const property = declaration.property as string;
-
-      // Unparsed values (var()/calc() etc.): the real property id lives in
-      // `value.propertyId` and the value is a raw token list.
-      if (property === 'unparsed') {
-        const unparsed = declaration.value as AnyRecord;
-        const propertyId = unparsed.propertyId as AnyRecord | undefined;
-        const tokens = unparsed.value as CssToken[] | undefined;
-        const loc = declaration.loc as AnyRecord | undefined;
-        if (typeof propertyId?.property === 'string' && Array.isArray(tokens)) {
-          const collected: CollectedDeclaration = {
-            property: propertyId.property,
-            value: normalizeTokens(tokens),
-            unparsed: true,
-          };
-          if (loc && typeof loc.line === 'number') collected.line = loc.line;
-          if (loc && typeof loc.column === 'number') collected.column = loc.column;
-          out.push(collected);
-        }
-        continue;
-      }
-
-      if (property === 'custom') {
-        if (intoCustomProps) {
-          const value = declaration.value as AnyRecord;
-          const tokens = value.value as CssToken[] | undefined;
-          if (typeof value.name === 'string' && Array.isArray(tokens)) {
-            variables.set(value.name, normalizeTokens(tokens));
-          }
-        }
-        continue;
-      }
-      const loc = declaration.loc as AnyRecord | undefined;
-      const collected: CollectedDeclaration = {
-        property,
-        value: declaration.value,
-        unparsed: false,
-      };
-      if (loc && typeof loc.line === 'number') collected.line = loc.line;
-      if (loc && typeof loc.column === 'number') collected.column = loc.column;
-      out.push(collected);
+      out.push(...flattenDeclaration(declaration, target, true));
     }
     return out;
   }
@@ -114,23 +140,21 @@ export function collectStylesheet(css: string): CollectedStylesheet {
   function handleStyleRule(rule: AnyRecord, conditions: ConditionSpec[]): void {
     const selectorGroups = rule.selectors as Selector[][] | undefined;
     if (!selectorGroups) return;
-    const declarations = collectDeclarations(rule, false);
+    // Custom properties declared with a class selector scope to that rule
+    // (Tailwind's `--tw-scale-x`); on class-less rules (`:root`, universal
+    // base-layer defaults) they are global defaults.
+    const hasClass = selectorGroups.some((group) =>
+      group.some((s) => s.type === 'class'),
+    );
+    const locals: VariableMap = new Map();
+    const declarations = collectDeclarations(rule, hasClass ? locals : variables);
 
     for (const group of selectorGroups) {
       if (group.length === 0) continue;
-
-      // `:root` / `:host` theme blocks: harvest custom properties.
       const first = group[0] as Selector | undefined;
-      if (
-        group.length === 1 &&
-        first?.type === 'pseudo-class' &&
-        (selectorName(first) === 'root' || selectorName(first) === 'host')
-      ) {
-        collectDeclarations(rule, true);
-        continue;
-      }
 
-      // Base-layer content (tag/universal selectors): skip silently.
+      // Custom properties on class-less rules (`:root`/universal) were already
+      // harvested into the global map; non-class rules carry no style data.
       if (!group.some((s) => s.type === 'class')) continue;
       if (declarations.length === 0) continue;
 
@@ -154,6 +178,7 @@ export function collectStylesheet(css: string): CollectedStylesheet {
         const className = selectorName(first) as string;
         const existing = classes.get(className);
         const ruleEntry: CollectedRule = { conditions, declarations };
+        if (locals.size > 0) ruleEntry.locals = locals;
         if (existing) existing.push(ruleEntry);
         else classes.set(className, [ruleEntry]);
       }
@@ -180,6 +205,10 @@ export function collectStylesheet(css: string): CollectedStylesheet {
       if (nested.type === 'style') {
         handleStyleRule(value, conditions);
       }
+      if (nested.type === 'keyframes') {
+        keyframes.push(value);
+      }
+      // @supports/@property shims carry no style data (see visitor note).
     }
   }
 
@@ -210,13 +239,18 @@ export function collectStylesheet(css: string): CollectedStylesheet {
           walkNestedRules(value.rules as AnyRecord[], parsed.conditions);
           return [];
         }
+        // @property rules carry no style data for lowering.
+        if (anyRule.type === 'property') return [];
         if (anyRule.type === 'style') {
           handleStyleRule(value, []);
+        }
+        if (anyRule.type === 'keyframes') {
+          keyframes.push(value);
         }
         return undefined;
       },
     },
   });
 
-  return { variables, classes, diagnostics };
+  return { variables, classes, keyframes, diagnostics };
 }

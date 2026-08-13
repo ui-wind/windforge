@@ -6,7 +6,7 @@
  * data, exchanged through the generated module. Version fields gate
  * compatibility.
  */
-import type { ConditionIR, DeclarationIR } from '@windforge/ir';
+import type { AnimationIR, ConditionIR, DeclarationIR, TransitionIR } from '@windforge/ir';
 
 /** A group of declarations gated by conditions (all must hold). */
 export type VariantEntry = {
@@ -17,6 +17,11 @@ export type VariantEntry = {
 export type ClassEntry = {
   base: DeclarationIR[];
   variants?: VariantEntry[];
+  /** Animation metadata lowered from `animation-*` / `animate-*` utilities.
+   * Optional: older artifacts omit it. */
+  animation?: AnimationIR;
+  /** Transition metadata lowered from `transition-*` utilities. */
+  transition?: TransitionIR;
 };
 
 export type RuntimeArtifact = {

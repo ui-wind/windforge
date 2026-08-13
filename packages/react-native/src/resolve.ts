@@ -6,7 +6,13 @@
  * the compiler resolved tokens/vars/calcs at build time.
  */
 import { parseStaticUtility } from '@windforge/ir';
-import type { DeclarationIR, IRValue, TransformOperationIR } from '@windforge/ir';
+import type {
+  AnimationIR,
+  DeclarationIR,
+  IRValue,
+  TransformOperationIR,
+  TransitionIR,
+} from '@windforge/ir';
 import { evaluateCondition } from './conditions.js';
 import {
   recordCacheHit,
@@ -153,6 +159,7 @@ const composedCache = new Map<string, ReactNativeStyle>();
 export function __clearStyleCache(): void {
   styleCache.clear();
   composedCache.clear();
+  metaCache.clear();
 }
 
 /**
@@ -181,4 +188,66 @@ export function resolveClassNames(
   composedCache.set(signature, merged);
   if (composedCache.size > STYLE_CACHE_LIMIT) composedCache.clear();
   return merged;
+}
+
+export type AnimationMeta = {
+  animation?: AnimationIR;
+  transition?: TransitionIR;
+};
+
+/** Composed-string meta cache (flyweight): identical strings resolve to the
+ * same object identity, keyed like style caches. */
+const metaCache = new Map<string, AnimationMeta | null>();
+
+/** Merge transition metadata per field: the later token wins per field
+ * (mirrors the build-time merge in @windforge/tailwind). */
+function mergeTransitionMeta(
+  existing: TransitionIR | undefined,
+  incoming: TransitionIR,
+): TransitionIR {
+  if (!existing) return incoming;
+  const merged: TransitionIR = { properties: incoming.properties };
+  const duration = incoming.duration ?? existing.duration;
+  if (duration) merged.duration = duration;
+  const delay = incoming.delay ?? existing.delay;
+  if (delay) merged.delay = delay;
+  const timingFunction = incoming.timingFunction ?? existing.timingFunction;
+  if (timingFunction) merged.timingFunction = timingFunction;
+  return merged;
+}
+
+/**
+ * Resolve animation/transition metadata for a className string.
+ *
+ * Composed-string semantics match `resolveClassNames`: later tokens win —
+ * animation replaces wholesale, transition merges per field. Animation
+ * metadata is condition-independent (it only rides base rules), so no
+ * ConditionState is needed. Tokens absent from the artifact (fallback-only)
+ * contribute nothing: the controlled fallback emits static spacing only.
+ *
+ * Returns null when no token carries animation metadata.
+ */
+export function resolveAnimationMeta(className: string): AnimationMeta | null {
+  const tokens = className.split(/\s+/).filter(Boolean);
+  const signature = `${registryVersion()}|${tokens.join(' ')}`;
+  const cached = metaCache.get(signature);
+  if (cached !== undefined) return cached;
+
+  let animation: AnimationIR | undefined;
+  let transition: TransitionIR | undefined;
+  for (const name of tokens) {
+    const found = findClassEntry(name);
+    if (!found) continue;
+    if (found.entry.animation) animation = found.entry.animation;
+    if (found.entry.transition) transition = mergeTransitionMeta(transition, found.entry.transition);
+  }
+
+  const meta: AnimationMeta | null = animation || transition ? {} : null;
+  if (meta) {
+    if (animation) meta.animation = animation;
+    if (transition) meta.transition = transition;
+  }
+  metaCache.set(signature, meta);
+  if (metaCache.size > STYLE_CACHE_LIMIT) metaCache.clear();
+  return meta;
 }

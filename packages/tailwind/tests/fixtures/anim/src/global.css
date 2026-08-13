@@ -1,0 +1,11 @@
+@import 'tailwindcss';
+
+@theme {
+  --animate-spin-slow: spin-slow 1s linear infinite;
+}
+
+@keyframes spin-slow {
+  from { transform: rotate(0deg); opacity: 1; filter: blur(2px); }
+  50% { animation-timing-function: ease-in; transform: rotate(180deg); }
+  to { transform: rotate(360deg); }
+}

@@ -89,6 +89,42 @@ function dimensionToPx(value: TokenRecord): number | null {
   return null;
 }
 
+/**
+ * Evaluate a single (already var-substituted) token to a static value.
+ * Used by transform lowering for multi-value properties where per-value
+ * `resolveNumeric` does not apply. Returns null for anything non-static.
+ */
+export function resolveTokenValue(token: CssToken): ResolvedNumeric | null {
+  const record = asRecord(token.value);
+  switch (token.type) {
+    case 'number':
+    case 'integer':
+      return { value: Number(scalarValue(token)), unit: 'none' };
+    case 'percentage': {
+      const num = Number(scalarValue(token));
+      // lightningcss normalizes percentage tokens to fractions (1.05 = 105%);
+      // callers apply the unit semantics.
+      return Number.isNaN(num) ? null : { value: num, unit: 'percent' };
+    }
+    case 'length':
+    case 'dimension': {
+      const px = dimensionToPx(asRecord(scalarValue(token)));
+      return px === null ? null : { value: px, unit: 'px' };
+    }
+    case 'function': {
+      if ((record.name as string) !== 'calc') return null;
+      const args = record.arguments as CssToken[] | undefined;
+      return args ? CalcParser.parse(args) : null;
+    }
+    case 'parenthesized': {
+      const inner = record.value as CssToken[] | undefined;
+      return inner ? CalcParser.parse(inner) : null;
+    }
+    default:
+      return null;
+  }
+}
+
 function combineUnits(
   a: ResolvedNumeric,
   b: ResolvedNumeric,

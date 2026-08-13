@@ -49,6 +49,7 @@ export type {
   TimingFunctionIR,
   AnimationDirection,
   AnimationFillMode,
+  TransitionIR,
 } from './animation.js';
 export type {
   StyleIR,

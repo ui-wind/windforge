@@ -28,13 +28,15 @@ export type {
   StyleHandle,
 } from './backends/types.js';
 export { WindforgeProvider, useWindforge, type WindforgeProviderProps } from './provider.js';
+export { getConditions, subscribeConditions, useConditionState } from './provider.js';
 export { __resetRegistry, getArtifacts, registerArtifact } from './registry.js';
 export {
+  resolveAnimationMeta,
   resolveClassName,
   resolveClassNames,
   toReactNativeValue,
 } from './resolve.js';
-export type { ReactNativeStyle } from './resolve.js';
+export type { AnimationMeta, ReactNativeStyle } from './resolve.js';
 export { stateSignature, type ConditionState } from './state.js';
 export { cx, cn, type ClassValue } from './cx.js';
 export {

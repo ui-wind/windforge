@@ -6,7 +6,14 @@
  * modern colors converted to hex, logical/longhand properties expanded to the
  * canonical RN-compatible set.
  */
-import type { CanonicalProperty, IRValue } from '@windforge/ir';
+import type {
+  AnimationIR,
+  CanonicalProperty,
+  IRValue,
+  KeyframeIR,
+  TimingFunctionIR,
+  TransitionIR,
+} from '@windforge/ir';
 import type { Diagnostic } from '../types.js';
 import { colorToHex, isColorValue } from './color.js';
 import type { CollectedDeclaration } from './collect.js';
@@ -18,8 +25,54 @@ import {
   type ResolvedNumeric,
   type VariableMap,
 } from './resolve.js';
+import {
+  isTypedAnimationNone,
+  lowerTimingFunction,
+  parseAnimationShorthand,
+  timeMsFromTokens,
+  timingFunctionFromTokens,
+  typedAnimationShorthand,
+  type AnimationShorthand,
+} from './animation.js';
+import { transformFromTokens, transformFromTyped } from './transform.js';
 
 type AnyRecord = Record<string, unknown>;
+
+/** Result of lowering one rule: canonical declarations plus animation
+ * metadata (present only when the rule carries animation-* / transition-*). */
+export type LoweredRule = {
+  declarations: LoweredDeclaration[];
+  animation?: AnimationIR;
+  transition?: TransitionIR;
+};
+
+/** Animation properties handled in lowerRule (not lowerDeclaration). */
+export const ANIMATION_PROPERTIES = new Set([
+  'animation',
+  'animation-name',
+  'animation-duration',
+  'animation-delay',
+  'animation-timing-function',
+  'animation-iteration-count',
+  'animation-direction',
+  'animation-fill-mode',
+]);
+
+/** Transition longhands handled in lowerRule. */
+export const TRANSITION_PROPERTIES = new Set([
+  'transition-property',
+  'transition-duration',
+  'transition-delay',
+  'transition-timing-function',
+]);
+
+/** Individual modern transform properties (typed by lightningcss). */
+export const TRANSFORM_PROPERTIES = new Set([
+  'transform',
+  'rotate',
+  'scale',
+  'translate',
+]);
 
 export type LowerContext = {
   diagnostics: Diagnostic[];
@@ -501,6 +554,363 @@ function lowerFontFamily(
   const unquoted = text.replace(/^["']|["']$/g, '');
   return [{ property: 'fontFamily', value: { kind: 'string', value: unquoted } }];
 }
+
+// ---- animation / transition metadata -------------------------------------
+
+/** CSS property → canonical property for `transition-property` lists.
+ * Unmapped properties cannot animate in RN and are dropped from the list. */
+const TRANSITION_PROPERTY_MAP: Record<string, CanonicalProperty> = {
+  'background-color': 'backgroundColor',
+  'border-color': 'borderColor',
+  'border-top-color': 'borderTopColor',
+  'border-right-color': 'borderRightColor',
+  'border-bottom-color': 'borderBottomColor',
+  'border-left-color': 'borderLeftColor',
+  'border-width': 'borderWidth',
+  'border-top-width': 'borderTopWidth',
+  'border-right-width': 'borderRightWidth',
+  'border-bottom-width': 'borderBottomWidth',
+  'border-left-width': 'borderLeftWidth',
+  'border-radius': 'borderRadius',
+  color: 'color',
+  opacity: 'opacity',
+  transform: 'transform',
+  rotate: 'transform',
+  scale: 'transform',
+  translate: 'transform',
+  width: 'width',
+  height: 'height',
+  'min-width': 'minWidth',
+  'min-height': 'minHeight',
+  'max-width': 'maxWidth',
+  'max-height': 'maxHeight',
+  top: 'top',
+  right: 'right',
+  bottom: 'bottom',
+  left: 'left',
+  'padding-top': 'paddingTop',
+  'padding-right': 'paddingRight',
+  'padding-bottom': 'paddingBottom',
+  'padding-left': 'paddingLeft',
+  'margin-top': 'marginTop',
+  'margin-right': 'marginRight',
+  'margin-bottom': 'marginBottom',
+  'margin-left': 'marginLeft',
+  gap: 'gap',
+  'row-gap': 'rowGap',
+  'column-gap': 'columnGap',
+  'flex-grow': 'flexGrow',
+  'flex-shrink': 'flexShrink',
+  'flex-basis': 'flexBasis',
+  'font-size': 'fontSize',
+  'letter-spacing': 'letterSpacing',
+  'z-index': 'zIndex',
+  'aspect-ratio': 'aspectRatio',
+};
+
+/** Typed `transition-property` value → 'all' | canonical list | null. */
+function transitionPropertyList(value: unknown): 'all' | CanonicalProperty[] | null {
+  if (!Array.isArray(value)) return null;
+  const out: CanonicalProperty[] = [];
+  const seen = new Set<CanonicalProperty>();
+  let all = false;
+  for (const item of value as AnyRecord[]) {
+    const prop = item.property as string;
+    if (prop === 'all') {
+      all = true;
+      continue;
+    }
+    const canonical = TRANSITION_PROPERTY_MAP[prop];
+    if (canonical && !seen.has(canonical)) {
+      seen.add(canonical);
+      out.push(canonical);
+    }
+  }
+  if (all) return 'all';
+  return out;
+}
+
+/** Unparsed (comma-separated ident) `transition-property` → 'all' | list. */
+function transitionPropertyTokens(tokens: CssToken[]): 'all' | CanonicalProperty[] | null {
+  const out: CanonicalProperty[] = [];
+  const seen = new Set<CanonicalProperty>();
+  let all = false;
+  for (const token of tokens) {
+    if (token.type !== 'ident') continue;
+    const prop = String(scalarValue(token) ?? '');
+    if (prop === 'all') {
+      all = true;
+      continue;
+    }
+    const canonical = TRANSITION_PROPERTY_MAP[prop];
+    if (canonical && !seen.has(canonical)) {
+      seen.add(canonical);
+      out.push(canonical);
+    }
+  }
+  if (all) return 'all';
+  return out;
+}
+
+/** Single significant token of a typed list or bare value. */
+function firstTypedToken(value: unknown): AnyRecord | null {
+  const list = Array.isArray(value) ? value : [value];
+  for (const entry of list) {
+    if (entry && typeof entry === 'object' && (entry as AnyRecord).type !== 'white-space') {
+      return entry as AnyRecord;
+    }
+  }
+  return null;
+}
+
+function typedString(token: AnyRecord): string | null {
+  if (typeof token.value === 'string') return token.value;
+  const inner = token.value as AnyRecord | undefined;
+  if (inner && typeof inner.value === 'string') return inner.value;
+  return null;
+}
+
+// `| undefined` lets shorthand-reset assign undefined explicitly
+// (exactOptionalPropertyTypes) — CSS shorthand resets every longhand.
+type AnimationFields = {
+  name?: string | undefined;
+  durationMs?: number | undefined;
+  delayMs?: number | undefined;
+  timingFunction?: TimingFunctionIR | undefined;
+  iterationCount?: number | 'infinite' | undefined;
+  direction?: AnimationIR['direction'] | undefined;
+  fillMode?: AnimationIR['fillMode'] | undefined;
+};
+
+/**
+ * Lower a rule's declarations plus animation metadata.
+ *
+ * Transition/animation longhands are merged per-field (later wins within the
+ * rule) into TransitionIR/AnimationIR instead of producing declarations —
+ * they have no RN style equivalent and drive the animation backends.
+ */
+export function lowerRuleDeclarations(
+  declarations: CollectedDeclaration[],
+  vars: VariableMap,
+  keyframes: Map<string, KeyframeIR[]>,
+  diagnostics: Diagnostic[],
+  locals?: VariableMap,
+): LoweredRule {
+  // Rule-local custom properties (e.g. `--tw-scale-x`) shadow theme vars.
+  if (locals && locals.size > 0) vars = new Map([...vars, ...locals]);
+  const ctx: LowerContext = { diagnostics, fontSizePx: null };
+  const out: LoweredDeclaration[] = [];
+  const transition: TransitionIR = { properties: 'all' };
+  let hasTransition = false;
+  const anim: AnimationFields = {};
+
+  for (const declaration of declarations) {
+    const property = declaration.property;
+
+    // ---- transition longhands --------------------------------------------
+    if (TRANSITION_PROPERTIES.has(property)) {
+      hasTransition = true;
+      if (property === 'transition-property') {
+        const list = declaration.unparsed
+          ? transitionPropertyTokens(substituteVars(declaration.value as CssToken[], vars) ?? [])
+          : transitionPropertyList(declaration.value);
+        if (list) transition.properties = list;
+        continue;
+      }
+      const ms = timeMsFromTokens(
+        declaration.unparsed
+          ? (substituteVars(declaration.value as CssToken[], vars) ?? [])
+          : ((declaration.value as unknown as CssToken[]) ?? []),
+      );
+      if (property === 'transition-duration') {
+        if (ms !== null) transition.duration = { ms };
+        continue;
+      }
+      if (property === 'transition-delay') {
+        if (ms !== null) transition.delay = { ms };
+        continue;
+      }
+      // transition-timing-function
+      const easing = declaration.unparsed
+        ? timingFunctionFromTokens(substituteVars(declaration.value as CssToken[], vars) ?? [])
+        : lowerTimingFunction(declaration.value);
+      if (easing) transition.timingFunction = easing;
+      continue;
+    }
+
+    // ---- animation shorthand / longhands ---------------------------------
+    if (ANIMATION_PROPERTIES.has(property)) {
+      if (property === 'animation') {
+        let shorthand: AnimationShorthand | null = null;
+        if (declaration.unparsed) {
+          const tokens = declaration.value as CssToken[];
+          const substituted = substituteVars(tokens, vars);
+          if (!substituted) {
+            diagnostics.push({
+              code: 'WF1001',
+              message: `Unresolvable var() reference in "${printTokens(tokens)}"`,
+            });
+            continue;
+          }
+          shorthand = parseAnimationShorthand(substituted);
+          if (!shorthand || !shorthand.name) {
+            diagnostics.push({
+              code: 'WF1006',
+              message: `Cannot statically lower animation: "${printTokens(tokens)}"`,
+            });
+            continue;
+          }
+        } else {
+          const entries = Array.isArray(declaration.value)
+            ? (declaration.value as AnyRecord[])
+            : [];
+          const entry = entries[0];
+          if (!entry) continue;
+          if (isTypedAnimationNone(entry)) {
+            // `animation: none` — reset every accumulated field.
+            anim.name = undefined;
+            anim.durationMs = undefined;
+            anim.delayMs = undefined;
+            anim.timingFunction = undefined;
+            anim.iterationCount = undefined;
+            anim.direction = undefined;
+            anim.fillMode = undefined;
+            continue;
+          }
+          shorthand = typedAnimationShorthand(entry);
+          if (!shorthand.name) {
+            diagnostics.push({
+              code: 'WF1006',
+              message: `Cannot statically lower animation shorthand`,
+            });
+            continue;
+          }
+        }
+        // CSS shorthand semantics: resets every longhand not specified.
+        anim.name = shorthand.name;
+        anim.durationMs = shorthand.durationMs;
+        anim.delayMs = shorthand.delayMs;
+        anim.timingFunction = shorthand.timingFunction;
+        anim.iterationCount = shorthand.iterationCount;
+        anim.direction = shorthand.direction;
+        anim.fillMode = shorthand.fillMode;
+        continue;
+      }
+      applyAnimationLonghand(anim, property, declaration, vars);
+      continue;
+    }
+
+    // ---- transforms -------------------------------------------------------
+    if (TRANSFORM_PROPERTIES.has(property)) {
+      const value = declaration.unparsed
+        ? transformFromTokens(property, substituteVars(declaration.value as CssToken[], vars) ?? [])
+        : transformFromTyped(property, declaration.value);
+      if (value && value.operations.length > 0) {
+        out.push({ property: 'transform', value });
+      } else if (!value) {
+        diagnostics.push({
+          code: 'WF1005',
+          message: `Cannot statically lower "${property}"`,
+        });
+      }
+      // Empty operations = transform: none → no declaration.
+      continue;
+    }
+
+    for (const lowered of lowerDeclaration(declaration, vars, ctx)) {
+      out.push(lowered);
+    }
+  }
+
+  const result: LoweredRule = { declarations: out };
+
+  if (hasTransition) {
+    result.transition = transition;
+  }
+
+  if (anim.name) {
+    const frames = keyframes.get(anim.name);
+    if (frames) {
+      result.animation = {
+        name: anim.name,
+        keyframes: frames,
+        ...(anim.durationMs !== undefined ? { duration: { ms: anim.durationMs } } : {}),
+        ...(anim.delayMs !== undefined ? { delay: { ms: anim.delayMs } } : {}),
+        ...(anim.timingFunction ? { timingFunction: anim.timingFunction } : {}),
+        ...(anim.iterationCount !== undefined ? { iterationCount: anim.iterationCount } : {}),
+        ...(anim.direction ? { direction: anim.direction } : {}),
+        ...(anim.fillMode ? { fillMode: anim.fillMode } : {}),
+      };
+    } else {
+      diagnostics.push({
+        code: 'WF1006',
+        message: `Animation "${anim.name}" references @keyframes not found in the stylesheet`,
+      });
+    }
+  }
+
+  return result;
+}
+
+/** Merge one animation longhand into the accumulating fields. */
+function applyAnimationLonghand(
+  anim: AnimationFields,
+  property: string,
+  declaration: CollectedDeclaration,
+  vars: VariableMap,
+): void {
+  if (property === 'animation-name') {
+    const token = firstTypedToken(declaration.value);
+    const name = token ? typedString(token) : null;
+    if (name) anim.name = name;
+    return;
+  }
+  if (property === 'animation-duration' || property === 'animation-delay') {
+    const ms = declaration.unparsed
+      ? timeMsFromTokens(substituteVars(declaration.value as CssToken[], vars) ?? [])
+      : timeMsFromTokens((declaration.value as unknown as CssToken[]) ?? []);
+    if (ms !== null) {
+      if (property === 'animation-duration') anim.durationMs = ms;
+      else anim.delayMs = ms;
+    }
+    return;
+  }
+  if (property === 'animation-timing-function') {
+    const easing = declaration.unparsed
+      ? timingFunctionFromTokens(substituteVars(declaration.value as CssToken[], vars) ?? [])
+      : lowerTimingFunction(declaration.value);
+    if (easing) anim.timingFunction = easing;
+    return;
+  }
+  if (property === 'animation-iteration-count') {
+    const token = firstTypedToken(declaration.value);
+    if (token?.type === 'infinite') {
+      anim.iterationCount = 'infinite';
+      return;
+    }
+    const num = token ? Number(typedString(token) ?? token.value) : NaN;
+    if (!Number.isNaN(num) && num >= 0) anim.iterationCount = num;
+    return;
+  }
+  if (property === 'animation-direction' || property === 'animation-fill-mode') {
+    const token = firstTypedToken(declaration.value);
+    const ident = token ? typedString(token) : null;
+    if (
+      property === 'animation-direction' &&
+      (ident === 'normal' || ident === 'reverse' || ident === 'alternate' || ident === 'alternate-reverse')
+    ) {
+      anim.direction = ident;
+    }
+    if (
+      property === 'animation-fill-mode' &&
+      (ident === 'none' || ident === 'forwards' || ident === 'backwards' || ident === 'both')
+    ) {
+      anim.fillMode = ident;
+    }
+    return;
+  }
+}
+
 
 /**
  * Lower a single collected declaration. Returns zero or more canonical

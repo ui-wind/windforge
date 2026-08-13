@@ -1,6 +1,11 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { __resetRegistry, registerArtifact } from '../src/registry.js';
-import { __clearStyleCache, resolveClassNames, toReactNativeValue } from '../src/resolve.js';
+import {
+  __clearStyleCache,
+  resolveAnimationMeta,
+  resolveClassNames,
+  toReactNativeValue,
+} from '../src/resolve.js';
 import {
   __resetRuntimeDiagnostics,
   getRuntimeDiagnostics,
@@ -65,6 +70,50 @@ const artifact: RuntimeArtifact = {
           ],
         },
       ],
+    },
+    'animate-spin': {
+      base: [],
+      animation: {
+        name: 'spin',
+        keyframes: [
+          {
+            offset: 1,
+            declarations: [
+              {
+                property: 'transform',
+                value: {
+                  kind: 'transform',
+                  operations: [
+                    { operation: 'rotate', value: { kind: 'string', value: '360deg' } },
+                  ],
+                },
+              },
+            ],
+          },
+        ],
+        duration: { ms: 1000 },
+        timingFunction: { kind: 'linear' },
+        iterationCount: 'infinite',
+      },
+    },
+    transition: {
+      base: [],
+      transition: {
+        properties: ['color', 'backgroundColor', 'borderColor', 'opacity', 'transform'],
+        timingFunction: { kind: 'cubic-bezier', points: [0.4, 0, 0.2, 1] },
+        duration: { ms: 150 },
+      },
+    },
+    'duration-500': {
+      base: [],
+      transition: { properties: 'all', duration: { ms: 500 } },
+    },
+    'ease-in-out': {
+      base: [],
+      transition: {
+        properties: 'all',
+        timingFunction: { kind: 'cubic-bezier', points: [0.4, 0, 0.2, 1] },
+      },
     },
   },
   conditions: [
@@ -275,6 +324,83 @@ describe('composed-string cache', () => {
       fallbackMisses: 0,
       unknownTokens: [],
     });
+  });
+});
+
+describe('resolveAnimationMeta', () => {
+  beforeEach(() => {
+    __resetRegistry();
+    __clearStyleCache();
+    __resetRuntimeDiagnostics();
+    registerArtifact(artifact);
+  });
+
+  it('returns animation metadata for animate-* tokens', () => {
+    const meta = resolveAnimationMeta('animate-spin');
+    expect(meta?.animation?.name).toBe('spin');
+    expect(meta?.animation?.iterationCount).toBe('infinite');
+    expect(meta?.transition).toBeUndefined();
+  });
+
+  it('returns transition metadata for transition utilities', () => {
+    const meta = resolveAnimationMeta('transition');
+    expect(meta?.transition).toEqual({
+      properties: ['color', 'backgroundColor', 'borderColor', 'opacity', 'transform'],
+      timingFunction: { kind: 'cubic-bezier', points: [0.4, 0, 0.2, 1] },
+      duration: { ms: 150 },
+    });
+  });
+
+  it('merges composed transition tokens per field, later wins', () => {
+    // duration-500's `properties: 'all'` replaces the transition list and
+    // its duration, but the earlier timingFunction survives per-field.
+    const meta = resolveAnimationMeta('transition duration-500');
+    expect(meta?.transition).toEqual({
+      properties: 'all',
+      timingFunction: { kind: 'cubic-bezier', points: [0.4, 0, 0.2, 1] },
+      duration: { ms: 500 },
+    });
+  });
+
+  it('carries both animation and transition metadata', () => {
+    const meta = resolveAnimationMeta('animate-spin ease-in-out p-4');
+    expect(meta?.animation?.name).toBe('spin');
+    expect(meta?.transition?.timingFunction).toEqual({
+      kind: 'cubic-bezier',
+      points: [0.4, 0, 0.2, 1],
+    });
+  });
+
+  it('returns null for tokens without animation metadata', () => {
+    expect(resolveAnimationMeta('p-4 bg-zinc-950')).toBeNull();
+    expect(resolveAnimationMeta('')).toBeNull();
+    // Fallback-only tokens (p-7 parses at runtime) carry no meta.
+    expect(resolveAnimationMeta('p-7')).toBeNull();
+    expect(resolveAnimationMeta('nope-xyz')).toBeNull();
+  });
+
+  it('caches with stable identity, including nulls', () => {
+    expect(resolveAnimationMeta('animate-spin')).toBe(resolveAnimationMeta('animate-spin'));
+    expect(resolveAnimationMeta('p-4')).toBe(resolveAnimationMeta('p-4'));
+  });
+
+  it('recomputes when a new artifact registers', () => {
+    expect(resolveAnimationMeta('animate-spin')?.animation?.name).toBe('spin');
+    registerArtifact({
+      ...artifact,
+      hash: 'v2',
+      styles: {
+        'animate-spin': {
+          base: [],
+          animation: {
+            name: 'spin-v2',
+            keyframes: [],
+            duration: { ms: 500 },
+          },
+        },
+      },
+    });
+    expect(resolveAnimationMeta('animate-spin')?.animation?.name).toBe('spin-v2');
   });
 });
 
