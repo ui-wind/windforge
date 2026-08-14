@@ -981,3 +981,24 @@ Add CLI tooling for inspecting generated artifacts during development and debugg
 
 - IntelliSense metadata, source maps, and cache inspection deferred to future phases.
 - The generate command uses the same pipeline as Metro/Vite plugins; output is identical to what the build tools produce.
+
+## Phase 19 — Benchmark integration ✅
+
+### Goal
+
+Integrate existing vitest bench files into CI and establish reference baselines. Addresses AGENTS.md policy: "no perf claims without benchmarks."
+
+### Done
+
+- **CI bench job**: Added non-blocking `bench` job to `.github/workflows/ci.yml`. Runs `pnpm turbo run bench`, captures output, uploads as artifact for trend tracking. Uses `continue-on-error: true` because shared-runner numbers are noisy.
+- **Baseline document**: Created `docs/specs/BENCHMARK_BASELINE.md` with reference numbers from compiler (tailwind) and runtime resolve (react-native). Key findings: incremental compile ~5,000× faster than cold; warm cache hit ~4.3× faster than cold resolve.
+- **Fixed turbo bench**: Removed unused `bench` script from `@windforge/vite` (no bench files existed, causing `turbo run bench` to fail). Only packages with actual bench files (tailwind, react-native, metro) now participate.
+
+### Baseline highlights
+
+| Category | Metric | Value |
+|---|---|---:|
+| Compiler | Cold full pipeline | ~405 Hz |
+| Compiler | Incremental (oxide reuse) | ~2,043K Hz |
+| Runtime | Warm cache hit | ~2,008K Hz |
+| Runtime | Cold resolve | ~468K Hz |
