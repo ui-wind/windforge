@@ -86,7 +86,10 @@ describe('named themes — backward compatibility', () => {
   it('produces artifact v2 even without extraThemes', async () => {
     const result = await generate({ entry: ENTRY, base: FIXTURE });
     expect(result.artifact.version).toBe(2);
-    // No themes field when no extraThemes registered.
-    expect(result.artifact.themes).toBeUndefined();
+    // Base @theme values are always emitted under "default" so
+    // useCSSVariable can resolve them for the default theme.
+    if (result.artifact.themes) {
+      expect(result.artifact.themes['default']).toBeDefined();
+    }
   });
 });

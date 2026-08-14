@@ -145,19 +145,19 @@ describe('variable cascade', () => {
     // bg-accent uses `variable` IR; resolved against themes.light by default.
     const lightCtx = { theme: 'light' };
     expect(resolveClassNames('bg-accent', baseState, undefined, lightCtx)).toEqual({
-      backgroundColor: '3b82f6',
+      backgroundColor: '#3b82f6',
     });
     // Switching theme picks up that theme's entry.
     expect(
       resolveClassNames('bg-accent', { ...baseState, theme: 'sunset' }, undefined, {
         theme: 'sunset',
       }),
-    ).toEqual({ backgroundColor: 'ef4444' });
+    ).toEqual({ backgroundColor: '#ef4444' });
     expect(
       resolveClassNames('bg-accent', { ...baseState, theme: 'ocean' }, undefined, {
         theme: 'ocean',
       }),
-    ).toEqual({ backgroundColor: '0ea5e9' });
+    ).toEqual({ backgroundColor: '#0ea5e9' });
   });
 
   it('scoped variable overrides win over global and artifact', () => {

@@ -16,6 +16,7 @@ import { useSyncExternalStore } from 'react';
 import { getThemeState, subscribeTheme } from './theme.js';
 import { useScopedVariables, type VariableOverrides } from './scoped.js';
 import { __bumpRegistryVersion } from './registry.js';
+import { tokensToString } from './token-print.js';
 
 /** theme name → variable name → override value. */
 const globalOverrides = new Map<string, Map<string, string>>();
@@ -67,7 +68,8 @@ export function useCSSVariable(name: string): string | undefined {
   const globalVal = globalOverrides.get(theme)?.get(name);
   if (globalVal !== undefined) return globalVal;
 
-  // 3. Artifact theme table.
+  // 3. Artifact theme table — per-theme override first, then base @theme
+  //    values stored under the "default" key by the compiler.
   // Imported lazily to avoid circular deps at module init time.
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { getArtifacts } = require('./registry.js') as {
@@ -75,19 +77,11 @@ export function useCSSVariable(name: string): string | undefined {
   };
   const artifacts = getArtifacts();
   for (let i = artifacts.length - 1; i >= 0; i--) {
-    const entries = artifacts[i]?.themes?.[theme];
+    const entries = artifacts[i]?.themes?.[theme] ?? artifacts[i]?.themes?.['default'];
     if (!entries) continue;
     const entry = entries.find((e) => e.name === name);
     if (entry && Array.isArray(entry.tokens)) {
-      // Extract scalar value from serialized token array.
-      const parts: string[] = [];
-      for (const raw of entry.tokens) {
-        const token = raw as { type?: string; value?: unknown };
-        if (!token || typeof token.type !== 'string') continue;
-        if (token.type === 'white-space') continue;
-        parts.push(String(token.value ?? ''));
-      }
-      const result = parts.join('').trim();
+      const result = tokensToString(entry.tokens);
       if (result) return result;
     }
   }

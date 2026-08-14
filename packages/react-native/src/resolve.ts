@@ -33,6 +33,7 @@ import {
 } from './state.js';
 import type { ClassEntry, RuntimeArtifact } from './types.js';
 import type { VariableOverrides } from './scoped.js';
+import { printToken } from './token-print.js';
 
 export type ReactNativeStyle = Record<string, unknown>;
 
@@ -71,25 +72,26 @@ function resolveVariable(
   const globalVal = themeOverrides?.get(varName);
   if (globalVal !== undefined) return globalVal;
 
-  // 3. Artifact theme table.
+  // 3. Artifact theme table — per-theme override first, then base @theme
+  //    values stored under the "default" key by the compiler.
   const artifacts = getArtifacts();
   for (let i = artifacts.length - 1; i >= 0; i--) {
     const artifact = artifacts[i];
     if (!artifact) continue;
-    const entries = artifact.themes?.[ctx.theme];
+    // Per-theme override takes precedence over the base default.
+    const entries = artifact.themes?.[ctx.theme] ?? artifact.themes?.['default'];
     if (!entries) continue;
     const entry = entries.find((e) => e.name === varName);
     if (entry) {
-      // Token arrays are serialized CssToken[]; for simple scalar values
-      // extract the first meaningful token's value. Multi-token values
-      // (space-separated lists) are joined as strings.
       return tokensToValue(entry.tokens, ctx, depth);
     }
   }
   return undefined;
 }
 
-/** Convert a serialized token array (from artifact.themes) into a JS value. */
+/** Convert a serialized token array (from artifact.themes) into a JS value.
+ * Nested var() references recurse through the cascade; other token types
+ * serialize via the shared lightningcss token printer. */
 function tokensToValue(
   tokens: unknown[],
   ctx: ResolutionContext,
@@ -101,22 +103,24 @@ function tokensToValue(
     const token = raw as { type?: string; value?: unknown };
     if (!token || typeof token.type !== 'string') continue;
     if (token.type === 'white-space') continue;
-    if (token.type === 'function' && token.value === 'var') {
-      // Nested var() reference — recurse.
-      // Serialized as { type: 'function', value: 'var', arguments: [...] }
-      // where arguments contains the variable name token.
-      const args = (raw as { arguments?: Array<{ type?: string; value?: unknown }> })
-        .arguments;
-      if (args && args.length > 0) {
-        const nameArg = args.find((a) => a.type === 'dashed-ident');
-        if (nameArg && typeof nameArg.value === 'string') {
-          const resolved = resolveVariable(nameArg.value, ctx, depth + 1);
-          parts.push(resolved !== undefined ? String(resolved) : '');
+
+    // `var` token (normalizeTokens shape): { type:'var', value:{ name:{ident}, fallback } }
+    if (token.type === 'var') {
+      const nameRecord = (token.value as { name?: { ident?: string } } | undefined)?.name;
+      const varName = nameRecord?.ident;
+      if (typeof varName === 'string' && varName) {
+        const resolved = resolveVariable(varName, ctx, depth + 1);
+        if (resolved !== undefined) {
+          parts.push(String(resolved));
           continue;
         }
       }
+      // Unresolved: fall back to the literal fallback if present.
+      parts.push(printToken(raw));
+      continue;
     }
-    parts.push(String(token.value ?? ''));
+
+    parts.push(printToken(raw));
   }
   const result = parts.join('').trim();
   return result || undefined;
@@ -262,11 +266,19 @@ export function resolveClassNameTiers(
   let tiers: ResolvedTiers | null = null;
   if (found) {
     const { entry, artifact } = found;
+    // Theme conditions evaluate against the EFFECTIVE theme (the scoped
+    // override when present), not the raw global state.theme — so a subtree
+    // under <ScopedTheme name="ocean"> activates theme:ocean regardless of
+    // the global selection. themeCtx.theme is already scoped ?? global.
+    const evalState =
+      themeCtx && themeCtx.theme !== state.theme
+        ? { ...state, theme: themeCtx.theme }
+        : state;
     const variant: ReactNativeStyle = {};
     for (const rule of entry.variants ?? []) {
       const active = rule.conditionIds.every((id) => {
         const condition = artifact.conditions.find((c) => c.id === id);
-        return condition ? evaluateCondition(condition, state, componentState) : false;
+        return condition ? evaluateCondition(condition, evalState, componentState) : false;
       });
       if (active) Object.assign(variant, declarationsToStyle(rule.declarations, themeCtx));
     }

@@ -199,15 +199,26 @@ export function buildArtifact(
 
   // Phase 12 — serialize per-theme variable tables (VariableMap →
   // `{ name, tokens }` arrays) for runtime `variable` resolution.
+  // Base @theme values (from :root) are emitted under the "default" key so
+  // useCSSVariable can resolve them when no theme-specific override exists.
   let themes: Record<string, Array<{ name: string; tokens: unknown[] }>> | undefined;
-  if (collected.themeVariables && collected.themeVariables.size > 0) {
+  const hasBaseVars = collected.variables && collected.variables.size > 0;
+  const hasThemeVars = collected.themeVariables && collected.themeVariables.size > 0;
+  if (hasBaseVars || hasThemeVars) {
     themes = {};
-    for (const [themeName, vars] of [...collected.themeVariables.entries()].sort(
-      ([a], [b]) => (a < b ? -1 : a > b ? 1 : 0),
-    )) {
-      themes[themeName] = [...vars.entries()].sort(([a], [b]) => (a < b ? -1 : 1)).map(
-        ([name, tokens]) => ({ name, tokens }),
-      );
+    if (hasBaseVars) {
+      themes['default'] = [...collected.variables!.entries()]
+        .sort(([a], [b]) => (a < b ? -1 : 1))
+        .map(([name, tokens]) => ({ name, tokens }));
+    }
+    if (hasThemeVars) {
+      for (const [themeName, vars] of [...collected.themeVariables!.entries()].sort(
+        ([a], [b]) => (a < b ? -1 : a > b ? 1 : 0),
+      )) {
+        themes[themeName] = [...vars.entries()].sort(([a], [b]) => (a < b ? -1 : 1)).map(
+          ([name, tokens]) => ({ name, tokens }),
+        );
+      }
     }
   }
 
