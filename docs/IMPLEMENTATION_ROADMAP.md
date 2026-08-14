@@ -1002,3 +1002,15 @@ Integrate existing vitest bench files into CI and establish reference baselines.
 | Compiler | Incremental (oxide reuse) | ~2,043K Hz |
 | Runtime | Warm cache hit | ~2,008K Hz |
 | Runtime | Cold resolve | ~468K Hz |
+
+## Phase 20 — CLI hardening ✅
+
+### Goal
+
+Harden the CLI with proper error handling, documentation, and graceful failure modes.
+
+### Done
+
+- **Graceful missing-file error**: `windforge generate` now validates entry file existence before running the pipeline, returning WF0010 diagnostic with exit code 1 instead of throwing an unhandled ENOENT.
+- **README documentation**: Created `packages/cli/README.md` documenting both commands (`generate`, `compile`), all flags, output files, exit codes, and diagnostic codes.
+- **Test coverage**: Added test for missing-entry error path (WF0010 diagnostic returned correctly).

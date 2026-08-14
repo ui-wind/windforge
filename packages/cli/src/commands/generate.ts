@@ -5,7 +5,7 @@
  * artifact) and emits the generated JS module + optional IR dump for
  * inspection/debugging.
  */
-import { writeFileSync, mkdirSync } from 'node:fs';
+import { writeFileSync, mkdirSync, statSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { generate, type GenerateOptions } from '@windforge/tailwind';
 import { renderArtifactModule } from '@windforge/tailwind';
@@ -32,6 +32,16 @@ export type GenerateResult = {
 export async function generateCommand(options: GenerateInput): Promise<GenerateResult> {
   const entryPath = resolve(options.entry);
   const outDir = options.output ? resolve(options.output) : dirname(entryPath);
+
+  // Validate entry exists before running the pipeline.
+  try {
+    statSync(entryPath);
+  } catch {
+    return {
+      jsPath: '',
+      diagnostics: [{ code: 'WF0010', message: `entry file not found: ${entryPath}` }],
+    };
+  }
 
   const generateOptions: GenerateOptions = {
     entry: entryPath,

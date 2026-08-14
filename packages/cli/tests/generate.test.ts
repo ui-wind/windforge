@@ -52,4 +52,14 @@ describe('generateCommand', () => {
     const ir = JSON.parse(readFileSync(result.irPath!, 'utf8'));
     expect(ir.styles).toBeDefined();
   });
+
+  it('returns WF0010 diagnostic for missing entry file', async () => {
+    const result = await generateCommand({
+      entry: '/nonexistent/path/global.css',
+      output: scratch,
+    });
+    expect(result.diagnostics).toHaveLength(1);
+    expect(result.diagnostics[0]?.code).toBe('WF0010');
+    expect(result.jsPath).toBe('');
+  });
 });

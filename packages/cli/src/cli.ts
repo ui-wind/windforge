@@ -62,8 +62,15 @@ async function runGenerate(args: string[]): Promise<void> {
     platform: platform ?? undefined,
   });
 
+  const hasErrors = result.diagnostics.some((d) => d.code === 'WF0010');
   for (const diagnostic of result.diagnostics) {
-    process.stderr.write(`${formatDiagnostic({ severity: 'warning', ...diagnostic })}\n`);
+    const severity = hasErrors ? 'error' : 'warning';
+    process.stderr.write(`${formatDiagnostic({ severity, ...diagnostic })}\n`);
+  }
+
+  if (hasErrors) {
+    process.exitCode = 1;
+    return;
   }
 
   process.stdout.write(`wrote ${result.jsPath}\n`);
