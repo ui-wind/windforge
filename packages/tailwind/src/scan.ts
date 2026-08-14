@@ -10,6 +10,8 @@ export type ScanSource = {
   base: string;
   /** Glob pattern, e.g. "./src/" followed by "*.{ts,tsx}". */
   pattern: string;
+  /** Exclude matching files instead of including them (`@source not`). */
+  negated?: boolean;
 };
 
 /** Default patterns: app code only. Node/binary trees are never scanned. */
@@ -36,7 +38,7 @@ export function scanCandidates(base: string, options: ScanOptions = {}): string[
     sources: sources.map((source) => ({
       base: source.base,
       pattern: source.pattern,
-      negated: false,
+      negated: source.negated ?? false,
     })),
   });
   return scanner.scan();

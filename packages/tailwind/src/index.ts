@@ -3,22 +3,25 @@
  *
  * Tailwind v4 → Style IR frontend. Pipeline:
  *
- *   entry CSS ──compile()──▶ design system
- *   source files ──oxide scan──▶ candidates
+ *   entry CSS ──compile()──▶ design system + source discovery (@source)
+ *   sources ──oxide scan──▶ candidates
  *   build(candidates) ──▶ CSS ──collect──▶ rules + theme vars
  *   lower ──▶ RuntimeArtifact (static values, conditions)
+ *
+ * Compilation runs BEFORE scanning: the Tailwind compiler owns source
+ * discovery (`@source` directives, negation included) and the scanner must
+ * respect it — the same ordering the official Tailwind v4 tooling uses.
  */
 import { IR_VERSION } from '@windforge/ir';
-import { dirname } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import {
   buildArtifact,
   renderArtifactModule,
   type BuildResult,
   type RuntimeArtifact,
 } from './artifact.js';
-import { compileTailwindCss, type CompileOptions } from './compile.js';
+import { prepareTailwindCompiler, type CompileOptions } from './compile.js';
 import { scanCandidates, type ScanSource } from './scan.js';
-import type { Diagnostic } from './types.js';
 
 export type GenerateOptions = {
   /** Entry stylesheet, e.g. `./src/global.css`. */
@@ -39,24 +42,46 @@ export type GenerateOptions = {
 
 export type GenerateResult = BuildResult;
 
-/** Full pipeline: scan → compile → collect → lower → artifact. */
+/** Full pipeline: compile → discover sources → scan → build → lower. */
 export async function generate(options: GenerateOptions): Promise<GenerateResult> {
-  const base = options.base ?? dirname(options.entry);
-  const candidates = scanCandidates(base, options.sources ? { sources: options.sources } : {});
+  const entry = resolve(options.entry);
+  const base = options.base ?? dirname(entry);
   const compileOptions: CompileOptions = {};
   if (options.onDependency) compileOptions.onDependency = options.onDependency;
   if (options.extraCss) compileOptions.extraCss = options.extraCss;
-  const compiled = await compileTailwindCss(options.entry, candidates, compileOptions);
-  if (compiled.css === '') {
+
+  // Compile first: the compiler reports its configured sources (`@source`
+  // directives, `@source not` included) which candidate scanning must respect.
+  const prepared = await prepareTailwindCompiler(entry, compileOptions);
+  if (!prepared.compiler) {
     return {
       artifact: emptyArtifact(),
-      diagnostics: compiled.diagnostics,
+      diagnostics: prepared.diagnostics,
     };
   }
-  const built = buildArtifact(compiled.css, IR_VERSION);
+
+  const candidates = scanCandidates(base, {
+    sources: [
+      ...prepared.compiler.sources.map((source) => ({
+        base: source.base,
+        pattern: source.pattern,
+        negated: source.negated,
+      })),
+      // Catch-all at the entry directory: covers layouts whose classes live
+      // outside the default app/src/components globs. The oxide scanner keeps
+      // this bounded (node_modules/.git ignored, .gitignore respected).
+      { base: dirname(entry), pattern: '**/*' },
+      ...(options.sources ?? []),
+    ],
+  });
+  const css = prepared.compiler.build(candidates);
+  if (css === '') {
+    return { artifact: emptyArtifact(), diagnostics: [] };
+  }
+  const built = buildArtifact(css, IR_VERSION);
   return {
     artifact: built.artifact,
-    diagnostics: [...compiled.diagnostics, ...built.diagnostics],
+    diagnostics: built.diagnostics,
   };
 }
 
@@ -81,7 +106,13 @@ export {
   type RuntimeArtifact,
   type VariantEntry,
 } from './artifact.js';
-export { compileTailwindCss } from './compile.js';
+export {
+  compileTailwindCss,
+  prepareTailwindCompiler,
+  type CompileOptions,
+  type CompileResult,
+  type PreparedCompiler,
+} from './compile.js';
 export { colorToHex } from './css/color.js';
 export { collectStylesheet } from './css/collect.js';
 export { lowerDeclaration } from './css/lower.js';

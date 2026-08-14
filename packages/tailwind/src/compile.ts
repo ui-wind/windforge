@@ -4,11 +4,17 @@
  * entry CSS → `compile()` (resolves @import/@theme/@custom-variant, sets up
  * the design system) → `build(candidates)` → final CSS containing exactly the
  * utilities the scanner found.
+ *
+ * `prepareTailwindCompiler` stops before `build()` so callers can read
+ * `compiler.sources` (the `@source` directives) and scan candidates with
+ * Tailwind-native source discovery — `generate()` uses that ordering.
  */
 import { compile } from '@tailwindcss/node';
 import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import type { Diagnostic } from './types.js';
+
+type TailwindCompiler = Awaited<ReturnType<typeof compile>>;
 
 export type CompileOptions = {
   /** Called for each @import/@plugin dependency so watch mode can track them. */
@@ -26,23 +32,32 @@ export type CompileResult = {
   diagnostics: Diagnostic[];
 };
 
+export type PreparedCompiler = {
+  /** `null` when the entry fails validation (WF1000) or compilation (WF1007). */
+  compiler: TailwindCompiler | null;
+  diagnostics: Diagnostic[];
+};
+
 /**
- * Compile an entry stylesheet for the given candidates.
+ * Compile an entry stylesheet into a Tailwind compiler without building the
+ * final CSS yet. Exposes `compiler.sources` (`@source` directives, including
+ * `@source not`) so the caller can discover candidate sources before calling
+ * `compiler.build(candidates)` — the ordering the official Tailwind v4
+ * tooling uses.
  *
- * Returns empty CSS (with a diagnostic) when the entry does not import
+ * Returns `compiler: null` (with a diagnostic) when the entry does not import
  * Tailwind — most likely a misconfigured `windforge.input`.
  */
-export async function compileTailwindCss(
+export async function prepareTailwindCompiler(
   entryPath: string,
-  candidates: string[],
   options: CompileOptions = {},
-): Promise<CompileResult> {
+): Promise<PreparedCompiler> {
   const entry = resolve(entryPath);
   const input = await readFile(entry, 'utf8');
 
   if (!input.includes('@import') || !/tailwindcss/.test(input)) {
     return {
-      css: '',
+      compiler: null,
       diagnostics: [
         {
           code: 'WF1000',
@@ -63,15 +78,33 @@ export async function compileTailwindCss(
       from: entry,
       onDependency: options.onDependency ?? (() => {}),
     });
-    return { css: compiler.build(candidates), diagnostics: [] };
+    return { compiler, diagnostics: [] };
   } catch (error) {
     // oxide throws plain Errors for malformed extension CSS (bad
     // @custom-variant/@utility). Surface them as diagnostics so a broken
     // extension degrades the build instead of crashing Metro startup.
     const message = error instanceof Error ? error.message : String(error);
     return {
-      css: '',
+      compiler: null,
       diagnostics: [{ code: 'WF1007', message: `Tailwind compilation failed: ${message}` }],
     };
   }
+}
+
+/**
+ * Compile an entry stylesheet for the given candidates.
+ *
+ * Returns empty CSS (with a diagnostic) when the entry does not import
+ * Tailwind — most likely a misconfigured `windforge.input`.
+ */
+export async function compileTailwindCss(
+  entryPath: string,
+  candidates: string[],
+  options: CompileOptions = {},
+): Promise<CompileResult> {
+  const prepared = await prepareTailwindCompiler(entryPath, options);
+  if (!prepared.compiler) {
+    return { css: '', diagnostics: prepared.diagnostics };
+  }
+  return { css: prepared.compiler.build(candidates), diagnostics: [] };
 }

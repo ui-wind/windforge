@@ -8,6 +8,14 @@ describe('colorToHex', () => {
     expect(hex).toMatch(/^#[0-9a-f]{6}$/);
   });
 
+  it('treats missing channels (CSS `none`, NaN across N-API) as absent', () => {
+    // Tailwind zinc-50: oklch(98.5% 0 none). lightningcss reports the `none`
+    // hue as NaN once the typed color crosses the N-API bridge.
+    expect(colorToHex({ type: 'oklch', l: 0.985, c: 0, h: Number.NaN })).toBe('#fafafa');
+    expect(colorToHex({ type: 'oklch', l: 0.985, c: 0, h: null })).toBe('#fafafa');
+    expect(colorToHex({ type: 'oklab', l: 0.6, a: null, b: null })).toBe('#808080');
+  });
+
   it('converts rgb to hex and trims opaque alpha', () => {
     expect(colorToHex({ type: 'rgb', r: 255, g: 0, b: 0, alpha: 1 })).toBe('#ff0000');
   });

@@ -27,6 +27,7 @@ try {
     base: FIXTURE,
     outputDir,
     diagnostics: false,
+    watch: false,
     extensions: [
       defineUtility({ name: 'glass', css: 'opacity: 0.8;' }),
       defineTokens({ colors: { brand: '#22c55e' } }),

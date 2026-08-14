@@ -48,6 +48,7 @@ describe('compileWindforge', () => {
       base: FIXTURE,
       outputDir,
       diagnostics: false,
+      watch: false,
     });
     const content = await readFile(outputFile, 'utf8');
     expect(outputFile).toContain('generated.js');
@@ -64,12 +65,14 @@ describe('compileWindforge', () => {
       base: FIXTURE,
       outputDir,
       diagnostics: false,
+      watch: false,
     });
     const { hash, hashes, diagnostics } = await compileWindforge({
       entry: ENTRY,
       base: FIXTURE,
       outputDir,
       diagnostics: false,
+      watch: false,
       extensions: [
         defineUtility({ name: 'glass', css: 'opacity: 0.8;' }),
         defineTokens({ colors: { brand: '#22c55e' } }),
@@ -94,6 +97,7 @@ describe('compileWindforge', () => {
       base: FIXTURE,
       outputDir,
       diagnostics: false,
+      watch: false,
       extensions: [
         defineUtility({ name: 'glass', css: 'opacity: 0.8;' }),
         defineUtility({ name: 'Bad-Name', css: 'opacity: 1;' }),
@@ -111,6 +115,7 @@ describe('compileWindforge', () => {
       base: FIXTURE,
       outputDir,
       diagnostics: false,
+      watch: false,
       frontends: [
         {
           name: 'demo-frontend',
@@ -134,6 +139,7 @@ describe('compileWindforge', () => {
       base: FIXTURE,
       outputDir,
       diagnostics: false,
+      watch: false,
       frontends: [
         {
           name: 'demo-frontend',
@@ -156,6 +162,7 @@ describe('compileWindforge', () => {
       base: FIXTURE,
       outputDir,
       diagnostics: false,
+      watch: false,
       frontends: [{ name: 'demo-frontend', generate: () => [noDeps] }],
     });
     expect(diagnostics.map((d) => d.code)).toEqual(['WF3010']);
