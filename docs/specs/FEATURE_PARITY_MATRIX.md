@@ -21,7 +21,8 @@ Legend:
 | @plugin | P1 | ✓ | ✓ | Isolated plugin adapter |
 | arbitrary values | P0 | ✓ | ✓ | Capability checked |
 | arbitrary properties | P1 | ✓ | ✓ | Where representable |
-| CSS variables | P0 | ✓ | ✓ | Static + controlled dynamic |
+| CSS variables | P0 | ✓ | ✓ | ✅ Phase 12: static + controlled dynamic + scoped (ScopedVariables nearest-wins); `useCSSVariable` reads cascade; `updateCSSVariables` writes per-theme overrides |
+| named themes | P1 | ✓ | ✓ | ✅ Phase 12: `extraThemes` injects `@custom-variant`; artifact v2 `themes` field; ThemeStore (`setTheme`/`useWindforgeTheme`); ScopedTheme subtree override; theme-variant utilities (`sunset:`/`ocean:`) activate per current theme |
 | custom CSS | P1 | ✓ | ✓ | CSS → same IR |
 | dark mode | P0 | ✓ | ✓ | System/class strategy |
 | platform variants | P0 | ✓ | ✓ | ios/android/web/native |

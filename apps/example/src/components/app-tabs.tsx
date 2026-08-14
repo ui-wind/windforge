@@ -72,6 +72,18 @@ export default function AppTabs() {
           renderingMode="template"
         />
       </NativeTabs.Trigger>
+
+      {/* Phase 12 — Themes screen. Deep-link-only on Android to stay within
+          the 6-tab cap (`example://themes`); iOS and web show it in the bar. */}
+      {Platform.OS !== 'android' && (
+        <NativeTabs.Trigger name="themes">
+          <NativeTabs.Trigger.Label>Themes</NativeTabs.Trigger.Label>
+          <NativeTabs.Trigger.Icon
+            src={require('@/assets/images/tabIcons/explore.png')}
+            renderingMode="template"
+          />
+        </NativeTabs.Trigger>
+      )}
     </NativeTabs>
   );
 }

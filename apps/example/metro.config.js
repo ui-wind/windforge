@@ -24,6 +24,11 @@ module.exports = (async () => {
     outputDir,
     extensions: windforgeConfig.extensions,
     frontends: windforgeConfig.frontends,
+    // Phase 12 — named themes. Each name injects a @custom-variant so
+    // sunset:/ocean: utilities lower to theme conditions; the matching
+    // .sunset/.ocean selectors in global.css carry per-theme variable
+    // overrides harvested into the artifact's themes table.
+    extraThemes: ['sunset', 'ocean'],
   });
 
   const config = getDefaultConfig(__dirname);

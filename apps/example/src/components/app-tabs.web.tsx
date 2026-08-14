@@ -42,6 +42,9 @@ export default function AppTabs() {
           <TabTrigger name="interactive" href="/interactive" asChild>
             <TabButton>Interactive</TabButton>
           </TabTrigger>
+          <TabTrigger name="themes" href="/themes" asChild>
+            <TabButton>Themes</TabButton>
+          </TabTrigger>
         </CustomTabList>
       </TabList>
     </Tabs>

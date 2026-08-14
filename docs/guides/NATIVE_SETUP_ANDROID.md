@@ -150,6 +150,37 @@ Pixel evidence captured via `adb exec-out screencap -p` + hex sampling
 | Named group control child | #71717b | #71717b (unchanged) | Confirms named-group scoping |
 | Data target bg | #27272a | #00bc7d | Tap toggle, then sample target |
 
+## Themes screen verification (Phase 12)
+
+The Themes screen is deep-link-only on Android (BottomNavigationView
+hard-caps at 6 tabs). Deep link + capture:
+
+```bash
+adb shell am start -W -a android.intent.action.VIEW -d "example://themes" dev.windforge.example
+adb exec-out screencap -p > themes.png
+```
+
+Note: `bg-accent` is a static token (#3b82f6) — Tailwind @theme references
+are lowered at build time to hex literals. Per-theme visual changes come from
+theme-variant utilities, not from bg-accent itself. ScopedVariables overrides
+have no visible effect for the same reason (documented honestly in roadmap).
+
+Pixel evidence (sampled via `scripts/pixel-sample.mjs`; values TBD — fill
+after first emulator run with Phase 12 build):
+
+| Sample | Idle hex | Active hex | Interaction |
+|---|---|---|---|
+| Accent card bg | #3b82f6 | #3b82f6 (always static) | No change across themes |
+| Sunset-variant card bg | #27272a | #fb2c36 | Tap Sunset button |
+| Ocean-variant card bg | #27272a | #00a6f4 | Tap Ocean button |
+| ScopedTheme subtree card | #00a6f4 | #00a6f4 (always ocean) | No interaction; locked by ScopedTheme |
+| useCSSVariable readout text | matches active theme --color-accent | updates live | Observe after each theme switch |
+
+Fill the Idle/Active hex columns with real sampled values from the emulator
+after the first Phase 12 build lands. The expected values above come from
+the artifact's lowered hex values and the `ocean:bg-sky-500` condition in
+`apps/example/src/app/themes.tsx`.
+
 ## Troubleshooting
 
 - **`Could not find device with name: emulator-5554`** — pass the AVD name

@@ -14,6 +14,19 @@
   }
 }
 
+/* Phase 12 — named theme variable overrides. `.sunset` / `.ocean` are
+   registered via extraThemes in metro.config.js; the compiler injects
+   @custom-variant declarations and harvests these selectors into the
+   artifact's themes table so runtime resolution picks up per-theme
+   values when setTheme('sunset') / setTheme('ocean') is active. */
+.sunset {
+  --color-accent: #ef4444;
+}
+
+.ocean {
+  --color-accent: #0ea5e9;
+}
+
 @custom-variant ios (@media (platform: ios));
 @custom-variant rtl (@media (layout-direction: rtl));
 @custom-variant ltr (@media (layout-direction: ltr));

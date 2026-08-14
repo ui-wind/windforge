@@ -793,6 +793,49 @@ Note: iOS simulator CGEvent mouse injection reaches native UIKit views (TextInpu
 - **No copying Uniwind implementation.** Group propagation designed from first principles: small `GroupContext` provider, `useGroupStates()` consumer hook. Facts/patterns from Uniwind MIT OSS informed the design (named groups, nearest-wins), but zero implementation code was copied.
 - **iOS pressed/group/data verification gap documented honestly.** Per Rule 14 (no fabrication), the simulator input limitation is stated explicitly rather than claiming full iOS pixel coverage that wasn't achieved.
 
+## Phase 12 — Named themes + CSS-variable runtime ✅
+
+**Dynamic theme switching beyond light/dark, scoped theme subtrees, and CSS-variable override at runtime.** All within the existing platform-neutral IR and build-time-first contract.
+
+### Done
+
+- ✅ IR `theme` condition kind (`ConditionIR { kind: 'theme'; id; name }`) + tailwind `ConditionSpec` variant; `specToConditionIR`/`conditionId` lower to `theme:<name>`.
+- ✅ Artifact version bump 1 → 2 with optional `themes?: Record<string, Array<{ name; tokens }>>` field (per-theme variable tables). Runtime accepts v1 + v2 (`SUPPORTED_ARTIFACT_VERSIONS = [1, 2]`).
+- ✅ `extraThemes` option on `generate()` and `compileWindforge()`: injects `@custom-variant <name> (&:where(.<name>, .<name> *))` for each theme; compiler harvests `.themeName { --var: ... }` selectors into the `themes` field.
+- ✅ `collect.ts` `matchThemeSelector` recognizes lightningcss AST shape for the injected `:where` clause (3-token second list: class + descendant combinator + universal).
+- ✅ Runtime ThemeStore (`theme.ts`): module-level subscription store with `getThemeState/subscribeTheme/setTheme/syncThemeColorScheme/initThemeColorScheme/useWindforgeTheme`. Integrates with Appearance listener for system sync; calls `backend.onThemeChanged?.(next, prev)`.
+- ✅ Scoped providers (`scoped.tsx`): `ScopedThemeContext` + `ScopedVariablesContext` mirroring GroupContext nearest-wins pattern; `ScopedVariables` merges ancestor map.
+- ✅ Variable resolution (`resolve.ts`): `toReactNativeValue` resolves `variable` IR through cascade: scoped vars → global overrides (per-theme) → artifact theme table. `MAX_VARIABLE_DEPTH = 8` guards recursive `var()` chains. Throws on unresolved variable; token refs fall back to raw ref string.
+- ✅ `ConditionState` gains required `theme` field (default `'light'`); `stateSignature` appends `|t<theme>`. Cache identity includes theme + scoped-vars signature.
+- ✅ `evaluateCondition` handles `kind: 'theme'` against `state.theme`.
+- ✅ Backend interface gains optional `onThemeChanged` hook (additive). Components wire scoped contexts into `backend.resolveStyle`.
+- ✅ `useCSSVariable(name)` reads cascade reactively; `updateCSSVariables(theme, vars)` writes global overrides and bumps registry version for cache invalidation.
+- ✅ Metro: `CompileWindforgeOptions.extraThemes` pass-through to `generate()`.
+- ✅ Tests: tailwind/themes.test.ts (5), react-native/theme.test.ts (10), conditions.test.ts theme case, metro/compiler.test.ts v2 fixture fix.
+- ✅ Example: themes.tsx screen (3-theme switcher + ScopedTheme subtree + ScopedVariables toggle + useCSSVariable readout); global.css per-theme variables; app-tabs registration (Android deep-link-only).
+
+### Measured
+
+(No benchmarks in Phase 12 — variable resolution is a single cascade lookup per style property at resolve time; no hot-path performance change measured.)
+
+### Scope notes
+
+- `calc()`/`runtime` IR kinds still throw in `toReactNativeValue` — follow-up Phase 13+.
+- Web CSS backend theme handling deferred to Phase 13 (web currently uses runtime resolution through RNW).
+- Uniwind Pro features excluded by policy.
+- `useAnimatedThemeProgress` (Phase 7) untouched — auto-animate of `dark:` variants remains a follow-up.
+
+### Decisions
+
+- **Artifact v2 backward compat.** Field `themes` is optional; `isCompatibleArtifact` accepts v1+v2. Custom frontends producing v1 artifacts still load; only the new variable-resolution path requires v2 data.
+- **Variable cascade depth limit.** `MAX_VARIABLE_DEPTH = 8` prevents infinite recursion from self-referential `var()` chains. Uniwind uses prototype-chain fall-through; Windforge uses an explicit depth counter, which is simpler and equally correct for realistic token graphs.
+- **Theme condition id scheme.** `theme:<name>` (e.g. `theme:sunset`) — consistent with existing `state:<state>` and `data:<name>` patterns.
+- **Explicit context passing over implicit module-level getter.** Components read scoped contexts and pass them explicitly to `backend.resolveStyle`; this keeps the dependency graph clear and avoids hidden coupling.
+- **No copying Uniwind implementation.** ThemeStore and scoped providers designed from first principles; facts/patterns from Uniwind MIT OSS informed the API shape (`extraThemes`, `setTheme`, `ScopedTheme`) but zero implementation code was copied.
+- **@theme tokens lower to static hex, not variable IR.** Confirmed via artifact inspection: `bg-accent` produces `{"kind":"color","value":"#3b82f6"}`, not `{"kind":"variable","name":"--color-accent"}`. The Tailwind lowering in `lower.ts` calls `substituteVars()` then converts to hex. This means ScopedVariables overrides have no visible effect on @theme-referencing utilities today. The variable-resolution cascade (scoped → global overrides → artifact theme table) exists in resolve.ts and is unit-tested — it activates when a future lowering preserves var() references as `kind:'variable'` IR. Documented honestly per Rule 14.
+
+Demo + verification: `apps/example/src/app/themes.tsx`; pixel-verify runbook in `NATIVE_SETUP_IOS.md` and `NATIVE_SETUP_ANDROID.md`.
+
 ## Phase 14 — Flutter research
 
 Only now evaluate the Flutter backend.

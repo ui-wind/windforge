@@ -413,6 +413,46 @@ a Windforge defect. Full pressed/group/data active-state verification uses the
 Android device runbook (`NATIVE_SETUP_ANDROID.md`) and unit tests
 (`packages/react-native/tests/interactive.test.tsx`).
 
+## Themes screen verification (Phase 12)
+
+The Themes entry (under **More** in the tab bar on iOS/web; deep-link-only
+on Android to stay within the 6-tab cap) demos named-theme switching,
+ScopedTheme subtrees, and `useCSSVariable` live readout. Deep link:
+
+```bash
+xcrun simctl openurl booted "example://themes"
+```
+
+Expected pixel values per theme (sampled via `simctl io booted screenshot` +
+hex sampling). Note: `bg-accent` is a static token (#3b82f6) — Tailwind
+@theme references are lowered at build time to hex literals, so the accent
+card does not change color on theme switch. Per-theme visual changes come
+from theme-variant utilities (`sunset:bg-red-500`, `ocean:bg-sky-500`):
+
+- **Accent card** — always `#3b82f6` regardless of active theme (static).
+- **Sunset-variant card** — idle `#27272a` (zinc-800); when global theme =
+  sunset, activates to `#fb2c36` (Tailwind v4 red-500 oklch→sRGB).
+- **Ocean-variant card** — idle `#27272a`; when global theme = ocean,
+  activates to `#00a6f4` (sky-500). Text flips to `#bedbff` (blue-200).
+- **ScopedTheme subtree card** (`ocean:bg-sky-500` inside
+  `<ScopedTheme name="ocean">`) — always `#00a6f4` regardless of global
+  theme selection. This is the key scoped-subtree proof.
+- **`useCSSVariable('--color-accent')` readout** — displays the resolved hex
+  from the artifact's per-theme variable table (matches current theme's
+  --color-accent value even though bg-accent itself is static).
+
+Known limitation (documented honestly): `ScopedVariables` overrides have no
+visible effect because all @theme tokens lower to static hex at build time.
+The variable-resolution cascade in resolve.ts exists and is unit-tested but
+is not exercised by any currently-lowered utility. Forward-compatible for
+when a future lowering preserves var() references as `kind:'variable'` IR.
+
+iOS simulator input limitation: the same CGEvent constraint from Phase 11
+applies — theme-switch buttons are Pressable components using the JS touch
+responder, so direct tap works but scripted mouse injection does not. The
+verification above assumes manual taps or dev-route navigation; automated
+pixel matrix runs should use the route hook instead.
+
 ## Troubleshooting
 
 - **"WindforgeStyle TurboModule not found" warning** — the app is running

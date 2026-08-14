@@ -118,10 +118,14 @@ Backends decide how each condition is lowered.
 | `layout-direction` | direction | environment |
 | `state` | pseudo state, optional group scope | component state |
 | `data` | attribute name, optional exact value | component state |
+| `theme` | theme name | environment (theme store) |
 
 Environment conditions are global: every component sees the same value.
 `state` and `data` conditions are local: they evaluate against the state of
 the component (or an ancestor group provider), not the environment.
+`theme` is global by default but can be overridden locally via a
+`ScopedTheme` provider — within that subtree the active theme name differs
+from the global ThemeStore value.
 
 ### State conditions
 
@@ -174,6 +178,51 @@ Semantics:
 
 Interactive variants stack with environment variants as ordinary
 and-conditions (`hover:dark:bg-red-700` → `["color-scheme:dark", "state:hover"]`).
+
+### Theme conditions
+
+Named themes (beyond built-in `light`/`dark`) are declared via
+`@custom-variant <name>` injection at compile time. The compiler prepends:
+
+```css
+@custom-variant sunset (&:where(.sunset, .sunset *));
+```
+
+for each name in `extraThemes`. Utilities prefixed with that variant lower to
+a `theme` condition:
+
+```text
+sunset:bg-red-500   → conditionIds ["theme:sunset"]
+ocean:text-blue-200 → conditionIds ["theme:ocean"]
+```
+
+The artifact (v2+) carries a `themes` field mapping each theme name to its
+variable table harvested from `.themeName { --var: ... }` selectors in the
+compiled CSS:
+
+```jsonc
+{
+  "version": 2,
+  "irVersion": 1,
+  "themes": {
+    "sunset": [{ "name": "--color-accent", "tokens": [{ "kind": "hash", "value": "ef4444" }] }],
+    "ocean":  [{ "name": "--color-accent", "tokens": [{ "kind": "hash", "value": "0ea5e9" }] }]
+  },
+  // …rest of artifact
+}
+```
+
+Id scheme: `theme:<name>`. Evaluation compares `ConditionState.theme`
+(resolved from the global ThemeStore or the nearest `ScopedTheme` provider)
+against the condition's `name` field. Scoped overrides take precedence:
+within `<ScopedTheme name="ocean">`, all descendants evaluate
+`theme:ocean` as active regardless of the global selection.
+
+Cache identity includes the theme dimension: `stateSignature` appends
+`|t${state.theme}`, so the same className resolves to distinct style
+objects across themes. Variable resolution (`toReactNativeValue` for
+`variable` IR kind) cascades through scoped vars → global per-theme
+overrides → artifact theme table; depth is capped at `MAX_VARIABLE_DEPTH = 8`.
 
 ## Animation IR
 
