@@ -915,3 +915,30 @@ The existing IR and frontend architecture should make this an additional backend
 - LayoutDirection context only affects condition evaluation (`rtl:`/`ltr:` variants). Style auto-flipping is out of scope.
 - The web-css backend does not support safe-area runtime values; the builtin utilities rely on browser env() support natively.
 - SSR silent-fail returns undefined for unresolved variables/calc. Consumers must handle undefined gracefully in style objects (RN ignores undefined values).
+
+## Phase 16 — Uniwind Pro gap fixes ✅
+
+### Goal
+
+Post-Phase-15 verification: audit each remaining Uniwind Pro gap against the actual Windforge codebase, fix only verified issues, and document already-handled or N/A items.
+
+### Done
+
+- **A. border-inline-start/end lowering** (Uniwind 1.1.1): `border-s-*` and `border-e-*` utilities were producing WF1003 and being completely dropped. Added 6 canonical properties to IR (`borderInlineStartWidth/Color/Style`, `borderInlineEndWidth/Color/Style`) and corresponding SIMPLE_PROPERTIES mappings in lower.ts. RN 0.86+ supports all six natively; unlike physical per-side border styles, logical borders map directly without the SIDE_BORDER_STYLE workaround. Pipeline tests verify `border-s-2`, `border-e-4`, and `border-s-red-500` produce correct style entries with zero WF1003 diagnostics.
+- **B. Vite 8 react-native-web prebundling** (Uniwind 1.5.1): Added `config()` hook to `@windforge/vite` plugin returning `optimizeDeps.include: ['react-native-web']`. react-native-web ships ESM via `module` field but lacks `"type": "module"`, causing Vite 8's Rolldown-based prebundler to potentially mis-handle it. Explicit inclusion forces consistent prebundling across Vite 5–8. Plugin test verifies the config structure.
+
+### Verification results (no action needed)
+
+- **withWindforge web props fix** (Uniwind 1.5.1): Already architecturally handled. components.tsx deletes all classNameProp keys from rest before forwarding to the host element. Tested at prop-mapping.test.tsx:97 (`expect(host.props.className).toBeUndefined()`).
+- **updateCSSVariables + scoped themes propagation** (Uniwind 1.1.0): Already works. globalOverrides is keyed by theme name, so overrides for `'ocean'` apply inside `<ScopedTheme name="ocean">` subtrees. Registry version bump invalidates caches globally on update.
+
+### Deferred / N/A
+
+- **defaultStyles** (Uniwind 1.2.0): Large experimental feature requiring its own design phase. Not a bug fix.
+- **Color prop dev warnings** (Uniwind 1.0.1): N/A — Windforge has no color-prop API (thumbColor/trackColor/accent-prefix conventions) to warn about.
+
+### Decisions
+
+- **Logical border styles bypass SIDE_BORDER_STYLE.** Physical per-side border styles (`border-top-style` etc.) are special-cased because RN historically only had an all-sides `borderStyle`. RN 0.86+ supports `borderInlineStartStyle`/`borderInlineEndStyle` natively, so these map directly via SIMPLE_PROPERTIES with kind `keyword`.
+- **Vite optimizeDeps unconditionally includes react-native-web.** Adding to include is idempotent for Vite 5–7 (they already prebundle RNW) and necessary for Vite 8. No version-conditional logic needed.
+- **No proprietary code copied.** All implementations from first principles using Windforge's existing architecture. Facts drawn only from public release notes and MIT OSS code.

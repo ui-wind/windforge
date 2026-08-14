@@ -34,6 +34,7 @@ Legend:
 | container queries | P1 | capability | ✓ | Explicit capability model |
 | rem | P0 | ✓ | ✓ | Platform-aware conversion |
 | calc() | P1 | ✓ | ✓ | ✅ Phase 15: min()/max()/clamp() statically evaluated when arguments share a unit family (all px, or all percent); mixed units require runtime reference lengths and emit WF1002/WF1005 |
+| logical borders (border-s/border-e) | P1 | ✓ | ✓ | ✅ Phase 16: border-inline-start/end width/color/style lowered to RN's native `borderInlineStartWidth`/`borderInlineEndWidth` etc.; `border-s-*` and `border-e-*` utilities work correctly with zero WF1003 diagnostics |
 | color functions | P1 | capability | ✓ | Native parser required |
 | safe-area env() | P1 | ✓ | ✓ | ✅ Phase 7: insets metrics API (`getInsets`/`useInsets`, optional `@windforge/react-native/safe-area` entrypoint); ✅ Phase 15: RTL-safe utilities (`ps-safe`/`pe-safe`/`ms-safe`/`me-safe`/`start-safe`/`end-safe`) with nested `@media (layout-direction: rtl)` in builtin @utility definitions; runtime resolution via insets store + registry version bump |
 

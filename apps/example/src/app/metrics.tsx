@@ -218,6 +218,24 @@ export default function MetricsScreen() {
           </Text>
           <GetCSSVariableDemo />
 
+          {/* Phase 16 — border-inline-start/end lowering. border-s/border-e
+              utilities map to RN's native logical border properties. */}
+          <Text className="mt-4 text-sm font-semibold text-zinc-900 dark:text-zinc-300">
+            Logical borders (border-s/border-e, Phase 16)
+          </Text>
+          <View className="mt-2 gap-2">
+            <View className="rounded-lg bg-white p-3 border-s-4 border-s-indigo-500 dark:bg-zinc-800">
+              <Text className="text-sm text-zinc-700 dark:text-zinc-300">
+                border-s-4 border-s-indigo-500 (left in LTR, right in RTL)
+              </Text>
+            </View>
+            <View className="rounded-lg bg-white p-3 border-e-4 border-e-emerald-500 dark:bg-zinc-800">
+              <Text className="text-sm text-zinc-700 dark:text-zinc-300">
+                border-e-4 border-e-emerald-500 (right in LTR, left in RTL)
+              </Text>
+            </View>
+          </View>
+
           {/* Phase 15 — safe-area RTL utilities. ps-safe / pe-safe apply padding
               that swaps between left/right insets when direction flips. */}
           <Text className="mt-4 text-sm font-semibold text-zinc-900 dark:text-zinc-300">
