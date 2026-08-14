@@ -224,6 +224,9 @@ importers:
       '@windforge/ir':
         specifier: workspace:*
         version: link:../ir
+      '@windforge/tailwind':
+        specifier: workspace:*
+        version: link:../tailwind
     devDependencies:
       '@types/node':
         specifier: ^26.2.0

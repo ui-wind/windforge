@@ -25,7 +25,8 @@
     "clean": "rm -rf dist *.tsbuildinfo"
   },
   "dependencies": {
-    "@windforge/ir": "workspace:*"
+    "@windforge/ir": "workspace:*",
+    "@windforge/tailwind": "workspace:*"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",

@@ -963,3 +963,21 @@ Verify the peer dependency ranges widened in Phase 15 actually work with RN 0.87
 - apps/example remains on RN 0.86.2 + Expo SDK 57 until react-native-reanimated ships 0.87 support. The package-level peer range (`>=0.86 <0.88`) is verified correct.
 - Native iOS/Android build verification requires Xcode/Android SDK not available in this environment. Metro bundle build and JS-level typecheck/tests confirmed.
 - Web E2E integration tests (headless browser pixel verification) deferred to Phase 17-A3.
+
+## Phase 18 — Developer experience: IR inspection ✅
+
+### Goal
+
+Add CLI tooling for inspecting generated artifacts during development and debugging. Addresses the "compiler debug mode / generated IR inspection" P1 gap in the feature parity matrix.
+
+### Done
+
+- **`windforge generate <entry.css>`**: New CLI subcommand that runs the full Tailwind v4 compile pipeline and emits `generated.js`. Supports `--output <dir>`, `--platform native|web`, and `--dump-ir` flag.
+- **`--dump-ir` flag**: Writes `artifact.json` with the complete runtime artifact as pretty-printed JSON for manual inspection of styles, themes, variants, and diagnostics.
+- **Tests**: 4 test cases covering JS module generation, IR dump output, no-dump default, and web platform targeting.
+- **Exports**: `generateCommand` and types exported from `@windforge/cli` for programmatic use.
+
+### Scope notes
+
+- IntelliSense metadata, source maps, and cache inspection deferred to future phases.
+- The generate command uses the same pipeline as Metro/Vite plugins; output is identical to what the build tools produce.

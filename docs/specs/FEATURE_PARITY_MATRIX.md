@@ -99,8 +99,8 @@ Legend:
 | HMR | P0 | ✅ Phase 10: file watcher regenerates `.windforge/generated.js` inside the project root; Metro invalidates without restart (no Metro-internals patching) |
 | monorepo support | P0 | ✅ Phase 9: pnpm+turbo workspace; CI runs build/typecheck/test across all packages (`.github/workflows/ci.yml`) |
 | cache inspection | P1 | |
-| compiler debug mode | P1 | |
-| generated IR inspection | P1 | |
+| compiler debug mode | P1 | ✅ Phase 18: `windforge generate <entry.css> --dump-ir` dumps artifact JSON for inspection |
+| generated IR inspection | P1 | ✅ Phase 18: `--dump-ir` flag writes `artifact.json` with complete runtime artifact (styles, themes, variants) |
 
 ## Extensibility
 
