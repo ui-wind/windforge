@@ -540,7 +540,13 @@ describe('toReactNativeValue', () => {
     ).toEqual([{ translateX: 4 }, { scale: 2 }]);
   });
 
-  it('throws on unresolved token references', () => {
-    expect(() => toReactNativeValue({ kind: 'token', ref: 'colors.primary' })).toThrow();
+  it('returns the raw ref for non-variable token references', () => {
+    // Phase 12: only dashed-ident tokens (--name) enter the variable cascade.
+    // Legacy category-prefixed refs (colors.primary) pass through as-is.
+    expect(toReactNativeValue({ kind: 'token', ref: 'colors.primary' })).toBe('colors.primary');
+  });
+
+  it('throws on unresolved variable references', () => {
+    expect(() => toReactNativeValue({ kind: 'variable', name: '--missing' })).toThrow();
   });
 });

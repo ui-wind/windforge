@@ -122,4 +122,14 @@ describe('evaluateCondition', () => {
     expect(evaluateCondition(ltr, baseState)).toBe(true);
     expect(evaluateCondition(ltr, { ...baseState, layoutDirection: 'rtl' })).toBe(false);
   });
+
+  it('evaluates theme conditions against state.theme (Phase 12)', () => {
+    const sunset: ConditionIR = { kind: 'theme', id: 'theme:sunset', name: 'sunset' };
+    expect(evaluateCondition(sunset, baseState)).toBe(false);
+    expect(evaluateCondition(sunset, { ...baseState, theme: 'sunset' })).toBe(true);
+    // Other themes do not activate.
+    expect(evaluateCondition(sunset, { ...baseState, theme: 'ocean' })).toBe(false);
+    const ocean: ConditionIR = { kind: 'theme', id: 'theme:ocean', name: 'ocean' };
+    expect(evaluateCondition(ocean, { ...baseState, theme: 'ocean' })).toBe(true);
+  });
 });

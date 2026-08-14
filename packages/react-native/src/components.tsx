@@ -56,7 +56,9 @@ import {
 import { useConditionState } from './provider.js';
 import type { ClassPropMapping } from './prop-mapping/registry.js';
 import { getArtifacts } from './registry.js';
-import type { ReactNativeStyle } from './resolve.js';
+import type { ReactNativeStyle, ResolutionContext } from './resolve.js';
+import { useScopedTheme, useScopedVariables } from './scoped.js';
+import { getGlobalOverrides } from './variables.js';
 import type { ComponentState, ConditionState } from './state.js';
 
 export type StyledProps = {
@@ -147,6 +149,19 @@ const PRIMARY_MAPPING: ClassPropMapping[] = [
   { classNameProp: 'className', styleProp: 'style' },
 ];
 
+/** Build the Phase 12 variable resolution context from scoped theme/vars. */
+function useThemeContext(state: ConditionState): ResolutionContext | undefined {
+  const scopedTheme = useScopedTheme();
+  const scopedVars = useScopedVariables();
+  const effectiveTheme = scopedTheme ?? state.theme;
+  if (!scopedTheme && !scopedVars) return undefined;
+  return {
+    theme: effectiveTheme,
+    scopedVars: scopedVars ?? null,
+    globalOverrides: getGlobalOverrides(),
+  };
+}
+
 /** The primary `className → style` pair, linkable through the native protocol. */
 function isLinkable(mappings: ClassPropMapping[]): boolean {
   return (
@@ -183,6 +198,8 @@ export function createStyledElement<Props extends object>(
     // context is also the JS delivery path — provider state changes
     // re-render this component on every backend.
     const groupStates = useGroupStates();
+    // Phase 12 — scoped theme and variable overrides for resolution.
+    const themeCtx = useThemeContext(state);
 
     const { data, rest: dataRest } = extractDataProps(props as Record<string, unknown>);
 
@@ -200,7 +217,7 @@ export function createStyledElement<Props extends object>(
       if (typeof className !== 'string' || !className) continue;
       if (mapping.classNameProp === 'className') primaryClassName = className;
       resolved[mapping.styleProp] = mergeStyles(
-        backend.resolveStyle(className, state, componentState),
+        backend.resolveStyle(className, state, componentState, themeCtx),
         dataRest[mapping.styleProp],
       );
     }
@@ -277,6 +294,7 @@ function useInteractiveState(options: {
   componentState: ComponentState;
   groupNames: string[];
   providedGroups: GroupStates | null;
+  themeCtx: ResolutionContext | undefined;
 } {
   const {
     className,
@@ -288,6 +306,7 @@ function useInteractiveState(options: {
   } = options;
   const state = useConditionState(true);
   const groupStates = useGroupStates();
+  const themeCtx = useThemeContext(state);
   const componentState = useMemo<ComponentState>(
     () => ({
       pressed,
@@ -304,7 +323,7 @@ function useInteractiveState(options: {
     () => mergeGroupStates(groupStates, groupNames, { pressed, hovered, focused, disabled }),
     [groupStates, groupNames, pressed, hovered, focused, disabled],
   );
-  return { state, componentState, groupNames, providedGroups };
+  return { state, componentState, groupNames, providedGroups, themeCtx };
 }
 
 /** Wrap the host element in a group provider when a marker is present. */
@@ -359,7 +378,7 @@ export const Pressable = forwardRef<unknown, PressableProps>(function Pressable(
   const [focused, setFocused] = useState(false);
   const backend = getBackend();
   const { data, rest: forwarded } = extractDataProps(rest as Record<string, unknown>);
-  const { state, componentState, groupNames, providedGroups } = useInteractiveState({
+  const { state, componentState, groupNames, providedGroups, themeCtx } = useInteractiveState({
     className,
     pressed,
     hovered,
@@ -368,7 +387,7 @@ export const Pressable = forwardRef<unknown, PressableProps>(function Pressable(
     data,
   });
 
-  const resolved = mergeStyles(backend.resolveStyle(className ?? '', state, componentState), style);
+  const resolved = mergeStyles(backend.resolveStyle(className ?? '', state, componentState, themeCtx), style);
 
   const hostProps: Record<string, unknown> = {
     ...forwarded,
@@ -421,14 +440,14 @@ export const TextInput = forwardRef<unknown, TextInputProps>(function TextInput(
   const [focused, setFocused] = useState(false);
   const backend = getBackend();
   const { data, rest: forwarded } = extractDataProps(rest as Record<string, unknown>);
-  const { state, componentState, groupNames, providedGroups } = useInteractiveState({
+  const { state, componentState, groupNames, providedGroups, themeCtx } = useInteractiveState({
     className,
     focused,
     disabled: editable === false,
     data,
   });
 
-  const resolved = mergeStyles(backend.resolveStyle(className ?? '', state, componentState), style);
+  const resolved = mergeStyles(backend.resolveStyle(className ?? '', state, componentState, themeCtx), style);
 
   const hostProps: Record<string, unknown> = {
     ...forwarded,

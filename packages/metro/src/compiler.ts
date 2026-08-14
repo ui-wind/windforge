@@ -68,6 +68,13 @@ export type CompileWindforgeOptions = {
   watch?: boolean;
   /** Called after each watch-mode rebuild (not for the initial compile). */
   onRebuild?: (result: CompileWindforgeResult) => void;
+  /**
+   * Registered theme names (Phase 12). Injected as `@custom-variant`
+   * declarations so `theme:` variants lower to theme conditions; per-theme
+   * variable rules (`.name { --var: ...; }`) are harvested into the
+   * artifact's `themes` field. See @windforge/tailwind GenerateOptions.
+   */
+  extraThemes?: string[];
 };
 
 export type CompileWindforgeResult = {
@@ -101,6 +108,9 @@ async function runCompilation(
   // Extensions lower to CSS text; WF3xxx validation happens pre-render
   // (oxide positions cannot be attributed back to the extension).
   const generateOptions: GenerateOptions = { entry, base };
+  if (options.extraThemes && options.extraThemes.length > 0) {
+    generateOptions.extraThemes = options.extraThemes;
+  }
   if (options.extensions && options.extensions.length > 0) {
     const rendered = renderExtensions(options.extensions);
     diagnostics.push(...rendered.diagnostics);

@@ -62,7 +62,7 @@ export {
 export { cx, cn, type ClassValue } from './cx.js';
 export {
   isCompatibleArtifact,
-  SUPPORTED_ARTIFACT_VERSION,
+  SUPPORTED_ARTIFACT_VERSIONS,
   SUPPORTED_IR_VERSION,
   type ClassEntry,
   type RuntimeArtifact,
@@ -82,3 +82,19 @@ export {
   type ClassPropMapping,
   type ComponentMappingRecord,
 } from './prop-mapping/index.js';
+// Phase 12 — Named themes + CSS-variable runtime.
+export {
+  getThemeState,
+  setTheme,
+  subscribeTheme,
+  useWindforgeTheme,
+  type ThemeState,
+} from './theme.js';
+export {
+  ScopedTheme,
+  ScopedVariables,
+  useScopedTheme,
+  useScopedVariables,
+  type VariableOverrides,
+} from './scoped.js';
+export { updateCSSVariables, useCSSVariable } from './variables.js';

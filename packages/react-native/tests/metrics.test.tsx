@@ -62,11 +62,12 @@ const baseState: ConditionState = {
   fontScale: 1,
   pixelRatio: 3,
   layoutDirection: 'ltr',
+  theme: 'light',
 };
 
 describe('stateSignature', () => {
   it('includes font scale, pixel ratio and layout direction', () => {
-    expect(stateSignature(baseState)).toBe('light|ios|390x844|f1|p3|dltr');
+    expect(stateSignature(baseState)).toBe('light|ios|390x844|f1|p3|dltr|tlight');
   });
 
   it('differs when any metric changes', () => {

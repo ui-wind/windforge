@@ -1,0 +1,13 @@
+@import "tailwindcss";
+
+@theme {
+  --color-accent: #3b82f6;
+}
+
+.sunset {
+  --color-accent: #ef4444;
+}
+
+.ocean {
+  --color-accent: #0ea5e9;
+}

@@ -14,7 +14,7 @@
  * Backends must not import Fabric types (architecture §14); the fabric
  * backend talks to native only through its adapter interface.
  */
-import type { ReactNativeStyle } from '../resolve.js';
+import type { ReactNativeStyle, ResolutionContext } from '../resolve.js';
 import type { ComponentState, ConditionState } from '../state.js';
 
 /**
@@ -40,11 +40,14 @@ export interface StyleBackend {
    * `componentState` (Phase 11) is optional and additive: it carries the
    * component's own interaction/data facts for `state`/`data` conditions.
    * Backends without interaction delivery may ignore it.
+   * `themeCtx` (Phase 12) threads variable resolution context through to
+   * the resolver; omitted on pre-Phase-12 paths.
    */
   resolveStyle(
     className: string,
     state: ConditionState,
     componentState?: ComponentState,
+    themeCtx?: ResolutionContext,
   ): ReactNativeStyle;
   /** Bind a mounted host node to a className (native delivery only). */
   link?(handle: StyleHandle, className: string, state: ConditionState): void;
@@ -55,4 +58,11 @@ export interface StyleBackend {
    * decides what changed and pushes it; components are not re-rendered.
    */
   onConditionsChanged?(next: ConditionState, prev: ConditionState): void;
+  /**
+   * Phase 12 — observe a theme change. Called when setTheme() or a
+   * colorScheme sync changes the effective theme name. Native delivery
+   * backends may push theme-scoped style diffs; js-baseline ignores it
+   * (re-renders come from the ThemeStore subscription instead).
+   */
+  onThemeChanged?(next: string, prev: string): void;
 }

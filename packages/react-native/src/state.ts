@@ -13,13 +13,15 @@ export type ConditionState = {
   pixelRatio: number;
   /** Layout direction; changing it requires an app restart. */
   layoutDirection: 'ltr' | 'rtl';
+  /** Active theme name (Phase 12). Defaults to `'light'`; set by ThemeStore. */
+  theme: string;
 };
 
 /** Compact signature used as part of style-cache keys. */
 export function stateSignature(state: ConditionState): string {
   return (
     `${state.colorScheme}|${state.platform}|${state.windowWidth}x${state.windowHeight}` +
-    `|f${state.fontScale}|p${state.pixelRatio}|d${state.layoutDirection}`
+    `|f${state.fontScale}|p${state.pixelRatio}|d${state.layoutDirection}|t${state.theme}`
   );
 }
 

@@ -35,6 +35,15 @@ export function registryVersion(): number {
   return version;
 }
 
+/**
+ * Phase 12 — bump the registry version without registering a new artifact.
+ * Used by `updateCSSVariables` to invalidate style caches when global
+ * variable overrides change.
+ */
+export function __bumpRegistryVersion(): void {
+  version += 1;
+}
+
 /** Test-only: reset the registry. Not part of the public contract. */
 export function __resetRegistry(): void {
   artifacts.length = 0;

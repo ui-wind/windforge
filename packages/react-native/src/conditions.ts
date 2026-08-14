@@ -59,6 +59,11 @@ export function evaluateCondition(
       if (condition.value === undefined) return true;
       return normalizeDataValue(value) === condition.value;
     }
+    // Phase 12 — named theme conditions. Active when the effective theme
+    // name matches. The caller passes the scoped theme override (if any) via
+    // `state.theme`; it defaults to the global ThemeStore.current.
+    case 'theme':
+      return state.theme === condition.name;
     // Container conditions are not evaluated by the current runtime.
     case 'container':
     case 'custom':

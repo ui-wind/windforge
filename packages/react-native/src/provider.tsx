@@ -24,6 +24,12 @@ import {
 import { Appearance, Dimensions, I18nManager, PixelRatio, Platform } from 'react-native';
 import { getBackend } from './backends/index.js';
 import type { ConditionState } from './state.js';
+import {
+  getThemeState,
+  initThemeColorScheme,
+  subscribeTheme,
+  syncThemeColorScheme,
+} from './theme.js';
 
 export type WindforgeContextValue = {
   state: ConditionState;
@@ -51,6 +57,7 @@ function readConditions(): ConditionState {
     fontScale: PixelRatio.getFontScale(),
     pixelRatio: PixelRatio.get(),
     layoutDirection: readLayoutDirection(),
+    theme: getThemeState().current,
   };
 }
 
@@ -74,6 +81,20 @@ function setConditions(next: ConditionState): void {
   getBackend().onConditionsChanged?.(next, prev);
   for (const listener of [...subscribers]) listener();
 }
+
+// Phase 12 — keep conditions.theme in sync with the ThemeStore. When the
+// user calls setTheme() or when colorScheme changes while requested==='system',
+// the ThemeStore updates first, then this subscriber pushes the new theme into
+// the conditions snapshot so cache keys and useConditionState consumers update.
+subscribeTheme(() => {
+  const current = getThemeState().current;
+  if (conditions.theme !== current) {
+    const prev = conditions;
+    conditions = { ...conditions, theme: current };
+    getBackend().onConditionsChanged?.(conditions, prev);
+    for (const listener of [...subscribers]) listener();
+  }
+});
 
 const noopSubscribe = () => () => {};
 
@@ -113,6 +134,13 @@ export function WindforgeProvider(props: WindforgeProviderProps): ReactNode {
     return undefined;
   }, [colorScheme]);
 
+  // Phase 12 — seed the ThemeStore with the initial color scheme so that
+  // `requested === 'system'` resolves correctly from the first render.
+  useLayoutEffect(() => {
+    initThemeColorScheme(conditions.colorScheme);
+    return undefined;
+  }, []);
+
   useEffect(() => {
     if (colorScheme) {
       // System changes are ignored while overridden; the layout effect above
@@ -122,6 +150,9 @@ export function WindforgeProvider(props: WindforgeProviderProps): ReactNode {
     const appearanceSubscription = Appearance.addChangeListener(
       ({ colorScheme: scheme }) => {
         const next = scheme === 'dark' ? 'dark' : 'light';
+        // Phase 12 — notify the ThemeStore so 'system'-requested themes
+        // resolve to the new color scheme before conditions update.
+        syncThemeColorScheme(next);
         if (conditions.colorScheme !== next) {
           setConditions({ ...conditions, colorScheme: next });
         }

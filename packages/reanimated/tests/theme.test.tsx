@@ -65,25 +65,55 @@ function renderInScheme(scheme: 'light' | 'dark', element: ReturnType<typeof cre
 }
 
 describe('useAnimatedThemeProgress', () => {
+  // Track every renderer created within a test so beforeEach can unmount
+  // them all. The hook subscribes to the conditions store; without cleanup,
+  // subscribers leak across tests and fire stale withTiming calls.
+  const activeRenderers: Array<ReturnType<typeof create>> = [];
+
+  function trackedCreate(element: ReturnType<typeof createElement>): ReturnType<typeof create> {
+    let renderer!: ReturnType<typeof create>;
+    act(() => {
+      renderer = create(element);
+    });
+    activeRenderers.push(renderer);
+    return renderer;
+  }
+
+  function trackedRenderInScheme(
+    scheme: 'light' | 'dark',
+    element: ReturnType<typeof createElement>,
+  ): ReturnType<typeof create> {
+    let renderer!: ReturnType<typeof create>;
+    act(() => {
+      renderer = renderInScheme(scheme, element);
+    });
+    activeRenderers.push(renderer);
+    return renderer;
+  }
+
   beforeEach(() => {
+    // Unmount every renderer from the previous test before clearing call log.
+    for (const r of activeRenderers) {
+      try {
+        r.unmount();
+      } catch {
+        // already unmounted — ignore
+      }
+    }
+    activeRenderers.length = 0;
     mockWithTimingCalls.length = 0;
   });
 
   it('initializes at 0 in light mode', () => {
     const { Consumer, getSharedValue } = capture();
-    act(() => {
-      create(createElement(Consumer));
-    });
+    trackedCreate(createElement(Consumer));
     expect(getSharedValue().value).toBe(0);
     expect(mockWithTimingCalls).toHaveLength(0);
   });
 
   it('animates to 1 on a dark flip with the default 400ms duration', () => {
     const { Consumer, getSharedValue } = capture();
-    let renderer!: ReturnType<typeof create>;
-    act(() => {
-      renderer = renderInScheme('light', createElement(Consumer));
-    });
+    const renderer = trackedRenderInScheme('light', createElement(Consumer));
     act(() => {
       renderer.update(
         createElement(WindforgeProvider, { colorScheme: 'dark' }, createElement(Consumer)),
@@ -94,10 +124,7 @@ describe('useAnimatedThemeProgress', () => {
 
   it('animates back to 0 when the scheme flips back to light', () => {
     const { Consumer, getSharedValue } = capture();
-    let renderer!: ReturnType<typeof create>;
-    act(() => {
-      renderer = renderInScheme('light', createElement(Consumer));
-    });
+    const renderer = trackedRenderInScheme('light', createElement(Consumer));
     act(() => {
       renderer.update(
         createElement(WindforgeProvider, { colorScheme: 'dark' }, createElement(Consumer)),
@@ -113,10 +140,7 @@ describe('useAnimatedThemeProgress', () => {
 
   it('honors a custom duration', () => {
     const { Consumer, getSharedValue } = capture({ duration: 250 });
-    let renderer!: ReturnType<typeof create>;
-    act(() => {
-      renderer = renderInScheme('light', createElement(Consumer));
-    });
+    const renderer = trackedRenderInScheme('light', createElement(Consumer));
     act(() => {
       renderer.update(
         createElement(WindforgeProvider, { colorScheme: 'dark' }, createElement(Consumer)),
@@ -129,10 +153,14 @@ describe('useAnimatedThemeProgress', () => {
     mockReduceMotion = true;
     try {
       const { Consumer, getSharedValue } = capture();
-      let renderer!: ReturnType<typeof create>;
-      await act(async () => {
-        renderer = renderInScheme('light', createElement(Consumer));
-      });
+      const renderer = await (async () => {
+        let r!: ReturnType<typeof create>;
+        await act(async () => {
+          r = renderInScheme('light', createElement(Consumer));
+        });
+        activeRenderers.push(r);
+        return r;
+      })();
       act(() => {
         renderer.update(
           createElement(WindforgeProvider, { colorScheme: 'dark' }, createElement(Consumer)),
@@ -146,10 +174,7 @@ describe('useAnimatedThemeProgress', () => {
 
   it('stops animating after unmount', () => {
     const { Consumer } = capture();
-    let renderer!: ReturnType<typeof create>;
-    act(() => {
-      renderer = create(createElement(Consumer));
-    });
+    const renderer = trackedCreate(createElement(Consumer));
     renderer.unmount();
     const callsBefore = mockWithTimingCalls.length;
     act(() => {

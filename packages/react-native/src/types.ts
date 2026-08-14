@@ -36,17 +36,27 @@ export type RuntimeArtifact = {
    * then diffs every known class as before.
    */
   dependencies?: Record<string, string[]>;
+  /**
+   * Per-theme CSS variable tables (Phase 12). Keyed by theme name; values are
+   * serialized token arrays (`{ name, tokens }`) harvested from `.themeName`
+   * selectors in the source CSS. Absent on v1 artifacts or when no themes are
+   * configured. The runtime resolves `variable` IR values against this table.
+   */
+  themes?: Record<string, Array<{ name: string; tokens: unknown[] }>>;
 };
 
 /** Artifact format versions this runtime accepts. */
-export const SUPPORTED_ARTIFACT_VERSION = 1;
+export const SUPPORTED_ARTIFACT_VERSIONS = [1, 2] as const;
 export const SUPPORTED_IR_VERSION = 1;
 
 export function isCompatibleArtifact(artifact: unknown): artifact is RuntimeArtifact {
   if (!artifact || typeof artifact !== 'object') return false;
   const candidate = artifact as Partial<RuntimeArtifact>;
+  const versionOk =
+    typeof candidate.version === 'number' &&
+    SUPPORTED_ARTIFACT_VERSIONS.includes(candidate.version as 1 | 2);
   return (
-    candidate.version === SUPPORTED_ARTIFACT_VERSION &&
+    versionOk &&
     candidate.irVersion === SUPPORTED_IR_VERSION &&
     typeof candidate.styles === 'object' &&
     candidate.styles !== null &&

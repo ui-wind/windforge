@@ -18,8 +18,10 @@ import { collectKeyframes } from './css/collect-keyframes.js';
 import { lowerRuleDeclarations } from './css/lower.js';
 import { conditionId, specToConditionIR, type Diagnostic } from './types.js';
 
-/** Artifact format version (independent of IR version). */
-export const ARTIFACT_VERSION = 1;
+/** Artifact format version (independent of IR version). Bumped to 2 in Phase 12
+ * to carry optional per-theme variable tables (`themes`). The runtime accepts
+ * both v1 and v2 artifacts for backward compatibility. */
+export const ARTIFACT_VERSION = 2;
 
 /** A group of declarations gated by conditions (all must hold). */
 export type VariantEntry = {
@@ -49,6 +51,15 @@ export type RuntimeArtifact = {
    * when a condition flips.
    */
   dependencies: Record<string, string[]>;
+  /**
+   * Per-theme CSS variable tables (Phase 12). Keyed by theme name; values are
+   * serialized token arrays matching the VariableMap shape collected from
+   * `:root` and `.themeName` selectors. Absent on v1 artifacts or when no
+   * themes are configured. The runtime resolves `variable` IR values against
+   * this table, falling back through scoped overrides → global overrides →
+   * the default (`light`) theme.
+   */
+  themes?: Record<string, Array<{ name: string; tokens: unknown[] }>>;
 };
 
 export type BuildResult = {
@@ -104,9 +115,16 @@ function toDeclarationIRs(
  *
  * @param css output of `compileTailwindCss`
  * @param irVersion the IR format version this build targets
+ * @param themeNames registered extra theme names (Phase 12); when provided,
+ *   rules matching `.themeName { ... }` are harvested into the artifact's
+ *   `themes` field for runtime variable resolution.
  */
-export function buildArtifact(css: string, irVersion: number): BuildResult {
-  const collected = collectStylesheet(css);
+export function buildArtifact(
+  css: string,
+  irVersion: number,
+  themeNames?: string[],
+): BuildResult {
+  const collected = collectStylesheet(css, themeNames ? { themeNames } : undefined);
   const diagnostics = [...collected.diagnostics];
   const keyframes = collectKeyframes(collected.keyframes, collected.variables, diagnostics);
 
@@ -179,7 +197,21 @@ export function buildArtifact(css: string, irVersion: number): BuildResult {
     a.id < b.id ? -1 : a.id > b.id ? 1 : 0,
   );
 
-  const hash = hashCanonical({ styles, conditions });
+  // Phase 12 — serialize per-theme variable tables (VariableMap →
+  // `{ name, tokens }` arrays) for runtime `variable` resolution.
+  let themes: Record<string, Array<{ name: string; tokens: unknown[] }>> | undefined;
+  if (collected.themeVariables && collected.themeVariables.size > 0) {
+    themes = {};
+    for (const [themeName, vars] of [...collected.themeVariables.entries()].sort(
+      ([a], [b]) => (a < b ? -1 : a > b ? 1 : 0),
+    )) {
+      themes[themeName] = [...vars.entries()].sort(([a], [b]) => (a < b ? -1 : 1)).map(
+        ([name, tokens]) => ({ name, tokens }),
+      );
+    }
+  }
+
+  const hash = hashCanonical({ styles, conditions, themes });
   return {
     artifact: {
       version: ARTIFACT_VERSION,
@@ -188,6 +220,7 @@ export function buildArtifact(css: string, irVersion: number): BuildResult {
       styles,
       conditions,
       dependencies,
+      ...(themes ? { themes } : {}),
     },
     diagnostics,
   };

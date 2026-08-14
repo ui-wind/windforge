@@ -26,7 +26,7 @@ afterAll(async () => {
 
 function customArtifact(overrides: Partial<RuntimeArtifact> = {}): RuntimeArtifact {
   return {
-    version: 1,
+    version: 2,
     irVersion: 1,
     hash: 'frontend01',
     styles: {

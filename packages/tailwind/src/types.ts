@@ -25,7 +25,9 @@ export type ConditionSpec =
   | { kind: 'platform'; platform: 'ios' | 'android' | 'web' | 'native' }
   | { kind: 'layout-direction'; direction: 'ltr' | 'rtl' }
   | { kind: 'state'; state: InteractionState; group?: boolean; groupName?: string }
-  | { kind: 'data'; name: string; value?: string };
+  | { kind: 'data'; name: string; value?: string }
+  /** Named-theme condition (Phase 12). `name` matches a registered theme. */
+  | { kind: 'theme'; name: string };
 
 /** Deterministic id for a condition spec. */
 export function conditionId(spec: ConditionSpec): string {
@@ -49,6 +51,8 @@ export function conditionId(spec: ConditionSpec): string {
       return spec.value === undefined
         ? `data:${spec.name}`
         : `data:${spec.name}=${spec.value}`;
+    case 'theme':
+      return `theme:${spec.name}`;
   }
 }
 
@@ -88,5 +92,7 @@ export function specToConditionIR(spec: ConditionSpec): ConditionIR {
       if (spec.value !== undefined) ir.value = spec.value;
       return ir;
     }
+    case 'theme':
+      return { kind: 'theme', id, name: spec.name };
   }
 }

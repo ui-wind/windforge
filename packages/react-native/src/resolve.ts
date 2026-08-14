@@ -3,7 +3,10 @@
  *
  * Pure logic (no react-native imports) so it stays testable and reusable by
  * the web backend. Every value reaching this module is static by contract:
- * the compiler resolved tokens/vars/calcs at build time.
+ * the compiler resolved tokens/vars/calcs at build time — except for
+ * Phase 12 variable resolution, which looks up CSS custom properties against
+ * the active theme's variable table (artifact.themes) plus any runtime
+ * overrides (scoped variables / global overrides).
  */
 import { parseStaticUtility } from '@windforge/ir';
 import type {
@@ -29,11 +32,98 @@ import {
   type ConditionState,
 } from './state.js';
 import type { ClassEntry, RuntimeArtifact } from './types.js';
+import type { VariableOverrides } from './scoped.js';
 
 export type ReactNativeStyle = Record<string, unknown>;
 
+/** Context passed into value lowering for Phase 12 variable resolution. */
+export type ResolutionContext = {
+  /** Effective theme name (may differ from state.theme when scoped). */
+  theme: string;
+  /** Scoped variable overrides from the nearest ScopedVariables provider. */
+  scopedVars?: VariableOverrides | null;
+  /** Per-theme global overrides set via updateCSSVariables. */
+  globalOverrides?: Map<string, Map<string, string>>;
+};
+
+/** Maximum hops for recursive variable resolution (prevents cycles). */
+const MAX_VARIABLE_DEPTH = 8;
+
+/**
+ * Resolve a CSS variable reference (`var(--name)` or `token` kind whose
+ * payload is a variable name) through the Phase 12 cascade:
+ *   scoped vars → global overrides[theme] → artifact.themes[theme]
+ * Returns undefined when no source provides the variable.
+ */
+function resolveVariable(
+  varName: string,
+  ctx: ResolutionContext | undefined,
+  depth: number,
+): unknown | undefined {
+  if (!ctx || depth >= MAX_VARIABLE_DEPTH) return undefined;
+
+  // 1. Scoped overrides (nearest-wins per name).
+  const scoped = ctx.scopedVars?.[varName];
+  if (scoped !== undefined) return scoped;
+
+  // 2. Global overrides for the current theme.
+  const themeOverrides = ctx.globalOverrides?.get(ctx.theme);
+  const globalVal = themeOverrides?.get(varName);
+  if (globalVal !== undefined) return globalVal;
+
+  // 3. Artifact theme table.
+  const artifacts = getArtifacts();
+  for (let i = artifacts.length - 1; i >= 0; i--) {
+    const artifact = artifacts[i];
+    if (!artifact) continue;
+    const entries = artifact.themes?.[ctx.theme];
+    if (!entries) continue;
+    const entry = entries.find((e) => e.name === varName);
+    if (entry) {
+      // Token arrays are serialized CssToken[]; for simple scalar values
+      // extract the first meaningful token's value. Multi-token values
+      // (space-separated lists) are joined as strings.
+      return tokensToValue(entry.tokens, ctx, depth);
+    }
+  }
+  return undefined;
+}
+
+/** Convert a serialized token array (from artifact.themes) into a JS value. */
+function tokensToValue(
+  tokens: unknown[],
+  ctx: ResolutionContext,
+  depth: number,
+): unknown {
+  if (!Array.isArray(tokens) || tokens.length === 0) return undefined;
+  const parts: string[] = [];
+  for (const raw of tokens) {
+    const token = raw as { type?: string; value?: unknown };
+    if (!token || typeof token.type !== 'string') continue;
+    if (token.type === 'white-space') continue;
+    if (token.type === 'function' && token.value === 'var') {
+      // Nested var() reference — recurse.
+      // Serialized as { type: 'function', value: 'var', arguments: [...] }
+      // where arguments contains the variable name token.
+      const args = (raw as { arguments?: Array<{ type?: string; value?: unknown }> })
+        .arguments;
+      if (args && args.length > 0) {
+        const nameArg = args.find((a) => a.type === 'dashed-ident');
+        if (nameArg && typeof nameArg.value === 'string') {
+          const resolved = resolveVariable(nameArg.value, ctx, depth + 1);
+          parts.push(resolved !== undefined ? String(resolved) : '');
+          continue;
+        }
+      }
+    }
+    parts.push(String(token.value ?? ''));
+  }
+  const result = parts.join('').trim();
+  return result || undefined;
+}
+
 /** Lower one IR value to its React Native representation. */
-export function toReactNativeValue(value: IRValue): unknown {
+export function toReactNativeValue(value: IRValue, ctx?: ResolutionContext): unknown {
   switch (value.kind) {
     case 'number':
     case 'string':
@@ -44,11 +134,31 @@ export function toReactNativeValue(value: IRValue): unknown {
       // px/points: React Native treats plain numbers as points/dp already.
       return value.value;
     case 'list':
-      return value.items.map(toReactNativeValue);
+      return value.items.map((item) => toReactNativeValue(item, ctx));
     case 'transform':
-      return value.operations.map(toTransformObject);
-    case 'token':
-    case 'variable':
+      return value.operations.map((op) => toTransformObject(op, ctx));
+    case 'token': {
+      // Phase 12 — token kinds carry a variable ref (e.g. --color-accent).
+      // Resolve through the theme cascade; fall back to the raw ref string.
+      const varName = value.ref;
+      if (typeof varName === 'string' && varName.startsWith('--')) {
+        const resolved = resolveVariable(varName, ctx, 0);
+        return resolved !== undefined ? resolved : varName;
+      }
+      return varName;
+    }
+    case 'variable': {
+      // Phase 12 — explicit var() references. Resolve through the cascade.
+      const varName = value.name;
+      if (typeof varName === 'string') {
+        const resolved = resolveVariable(varName, ctx, 0);
+        if (resolved !== undefined) return resolved;
+      }
+      // No fallback in the IR type; unresolved variables throw.
+      throw new Error(
+        `@windforge/react-native: unresolved variable ${varName ?? '(unknown)'}`,
+      );
+    }
     case 'calc':
     case 'runtime':
       // The MVP contract lowers these at build time. If one survives, the
@@ -64,19 +174,19 @@ export function toReactNativeValue(value: IRValue): unknown {
   }
 }
 
-function toTransformObject(operation: TransformOperationIR): Record<string, unknown> {
+function toTransformObject(operation: TransformOperationIR, ctx?: ResolutionContext): Record<string, unknown> {
   if (operation.operation === 'translate') {
     return {
       translate: [
-        toReactNativeValue(operation.value[0]),
-        toReactNativeValue(operation.value[1]),
+        toReactNativeValue(operation.value[0], ctx),
+        toReactNativeValue(operation.value[1], ctx),
       ],
     };
   }
-  return { [operation.operation]: toReactNativeValue(operation.value) };
+  return { [operation.operation]: toReactNativeValue(operation.value, ctx) };
 }
 
-function declarationsToStyle(declarations: DeclarationIR[]): ReactNativeStyle {
+function declarationsToStyle(declarations: DeclarationIR[], ctx?: ResolutionContext): ReactNativeStyle {
   const style: ReactNativeStyle = {};
   // sourceOrder ascending preserves author order; priority descending would
   // win across documents, but within one artifact sourceOrder suffices.
@@ -84,7 +194,7 @@ function declarationsToStyle(declarations: DeclarationIR[]): ReactNativeStyle {
     (a, b) => (a.sourceOrder ?? 0) - (b.sourceOrder ?? 0),
   );
   for (const declaration of sorted) {
-    style[declaration.property] = toReactNativeValue(declaration.value);
+    style[declaration.property] = toReactNativeValue(declaration.value, ctx);
   }
   return style;
 }
@@ -127,16 +237,20 @@ export type ResolvedTiers = {
  * the component's own interaction facts; omitted on global resolution paths.
  * The fallback parser emits static declarations only, so its output lands
  * entirely in the base tier.
+ *
+ * `themeCtx` (Phase 12) provides variable resolution context — scoped theme
+ * name, scoped variables, and global overrides. Omitted on pre-Phase-12 paths.
  */
 export function resolveClassNameTiers(
   className: string,
   state: ConditionState,
   componentState?: ComponentState,
+  themeCtx?: ResolutionContext,
 ): ResolvedTiers | null {
   recordResolve();
   const signature =
     `${registryVersion()}|${className}|${stateSignature(state)}` +
-    `|${componentStateSignature(componentState)}`;
+    `|${componentStateSignature(componentState)}|${scopedVarsKey(themeCtx)}`;
   const cached = styleCache.get(signature);
   if (cached) {
     recordCacheHit();
@@ -154,16 +268,16 @@ export function resolveClassNameTiers(
         const condition = artifact.conditions.find((c) => c.id === id);
         return condition ? evaluateCondition(condition, state, componentState) : false;
       });
-      if (active) Object.assign(variant, declarationsToStyle(rule.declarations));
+      if (active) Object.assign(variant, declarationsToStyle(rule.declarations, themeCtx));
     }
-    tiers = { base: declarationsToStyle(entry.base), variant };
+    tiers = { base: declarationsToStyle(entry.base, themeCtx), variant };
   } else {
     // Build-time tables first; the fallback only covers a controlled subset
     // of static utilities and never replaces the artifact path.
     const declarations = parseStaticUtility(className);
     if (declarations) {
       recordFallbackParse();
-      tiers = { base: declarationsToStyle(declarations), variant: {} };
+      tiers = { base: declarationsToStyle(declarations, themeCtx), variant: {} };
     } else {
       recordFallbackMiss(className);
     }
@@ -186,13 +300,27 @@ export function resolveClassName(
   className: string,
   state: ConditionState,
   componentState?: ComponentState,
+  themeCtx?: ResolutionContext,
 ): ReactNativeStyle | null {
-  const tiers = resolveClassNameTiers(className, state, componentState);
+  const tiers = resolveClassNameTiers(className, state, componentState, themeCtx);
   return tiers ? { ...tiers.base, ...tiers.variant } : null;
 }
 
+/** Compact signature of the scoped-variable dimension for cache keys. */
+function scopedVarsKey(ctx?: ResolutionContext): string {
+  if (!ctx) return '';
+  let key = `t${ctx.theme}`;
+  if (ctx.scopedVars) {
+    const names = Object.keys(ctx.scopedVars).sort();
+    if (names.length > 0) {
+      key += `|v${names.map((n) => `${n}=${ctx.scopedVars![n]}`).join(';')}`;
+    }
+  }
+  return key;
+}
+
 const STYLE_CACHE_LIMIT = 4096;
-/** Per-token cache: `registryVersion|token|stateSignature|componentStateSignature`
+/** Per-token cache: `registryVersion|token|stateSignature|componentStateSignature|scopedVars`
  * → class style split into base/variant tiers. */
 const styleCache = new Map<string, ResolvedTiers>();
 /** Composed-string cache (flyweight): identical className strings resolve to
@@ -221,23 +349,27 @@ export function __clearStyleCache(): void {
  * Results are cached by the full normalized string: repeated resolution of
  * the same string returns the SAME object (stable identity for cheap
  * downstream comparison), recomputed on condition or registry changes.
+ *
+ * `themeCtx` (Phase 12) threads variable resolution context through to
+ * `resolveClassNameTiers`; omitted on pre-Phase-12 paths.
  */
 export function resolveClassNames(
   className: string,
   state: ConditionState,
   componentState?: ComponentState,
+  themeCtx?: ResolutionContext,
 ): ReactNativeStyle {
   const tokens = className.split(/\s+/).filter(Boolean);
   const signature =
     `${registryVersion()}|${tokens.join(' ')}|${stateSignature(state)}` +
-    `|${componentStateSignature(componentState)}`;
+    `|${componentStateSignature(componentState)}|${scopedVarsKey(themeCtx)}`;
   const composed = composedCache.get(signature);
   if (composed) return composed;
 
   const merged: ReactNativeStyle = {};
   const variantOverlay: ReactNativeStyle = {};
   for (const name of tokens) {
-    const tiers = resolveClassNameTiers(name, state, componentState);
+    const tiers = resolveClassNameTiers(name, state, componentState, themeCtx);
     if (!tiers) continue;
     Object.assign(merged, tiers.base);
     Object.assign(variantOverlay, tiers.variant);

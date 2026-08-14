@@ -103,6 +103,21 @@ export type CustomConditionIR = {
   payload?: IRValue;
 };
 
+/**
+ * Named-theme condition (Phase 12).
+ *
+ * Active when the runtime's current theme (global or scoped) matches `name`.
+ * The compiler lowers `@custom-variant <name> (&:where(.<name>, .<name> *))`
+ * selectors into this kind. Light/dark remain `color-scheme` conditions —
+ * themes are additive and orthogonal to the system color scheme.
+ */
+export type ThemeConditionIR = {
+  kind: 'theme';
+  id: string;
+  /** Theme name as registered in `extraThemes` (e.g. `sunset`, `ocean`). */
+  name: string;
+};
+
 export type ConditionIR =
   | MediaConditionIR
   | ColorSchemeConditionIR
@@ -111,6 +126,7 @@ export type ConditionIR =
   | StateConditionIR
   | DataConditionIR
   | ContainerConditionIR
-  | CustomConditionIR;
+  | CustomConditionIR
+  | ThemeConditionIR;
 
 export type ConditionKind = ConditionIR['kind'];

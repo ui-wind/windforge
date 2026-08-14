@@ -15,6 +15,7 @@
 import { IR_VERSION } from '@windforge/ir';
 import { dirname, resolve } from 'node:path';
 import {
+  ARTIFACT_VERSION,
   buildArtifact,
   renderArtifactModule,
   type BuildResult,
@@ -38,6 +39,14 @@ export type GenerateOptions = {
    * `defineTokens` output into this field.
    */
   extraCss?: string;
+  /**
+   * Registered theme names (Phase 12). For each name, the compiler injects
+   * `@custom-variant <name> (&:where(.<name>, .<name> *))` so Tailwind emits
+   * the theme-variant selectors that lower to `theme:<name>` conditions.
+   * `'light'` and `'dark'` are filtered out (Tailwind's built-in dark mode
+   * handles them via `color-scheme` conditions instead).
+   */
+  extraThemes?: string[];
 };
 
 export type GenerateResult = BuildResult;
@@ -49,6 +58,21 @@ export async function generate(options: GenerateOptions): Promise<GenerateResult
   const compileOptions: CompileOptions = {};
   if (options.onDependency) compileOptions.onDependency = options.onDependency;
   if (options.extraCss) compileOptions.extraCss = options.extraCss;
+
+  // Phase 12 — inject @custom-variant declarations for registered themes so
+  // Tailwind emits the `:where(.name, .name *)` selectors that collect.ts
+  // lowers into `theme:<name>` conditions. Filter built-in color-scheme
+  // names (light/dark) which Tailwind already handles natively.
+  let extraCss = options.extraCss ?? '';
+  const themeNames = (options.extraThemes ?? [])
+    .filter((name) => name !== 'light' && name !== 'dark');
+  if (themeNames.length > 0) {
+    const injections = themeNames
+      .map((name) => `@custom-variant ${name} (&:where(.${name}, .${name} *));`)
+      .join('\n');
+    extraCss = injections + (extraCss ? '\n' + extraCss : '');
+  }
+  if (extraCss) compileOptions.extraCss = extraCss;
 
   // Compile first: the compiler reports its configured sources (`@source`
   // directives, `@source not` included) which candidate scanning must respect.
@@ -78,7 +102,11 @@ export async function generate(options: GenerateOptions): Promise<GenerateResult
   if (css === '') {
     return { artifact: emptyArtifact(), diagnostics: [] };
   }
-  const built = buildArtifact(css, IR_VERSION);
+  const built = buildArtifact(
+    css,
+    IR_VERSION,
+    themeNames.length > 0 ? themeNames : undefined,
+  );
   return {
     artifact: built.artifact,
     diagnostics: built.diagnostics,
@@ -87,7 +115,7 @@ export async function generate(options: GenerateOptions): Promise<GenerateResult
 
 function emptyArtifact(): RuntimeArtifact {
   return {
-    version: 1,
+    version: ARTIFACT_VERSION,
     irVersion: IR_VERSION,
     hash: '00000000',
     styles: {},

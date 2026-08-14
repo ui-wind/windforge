@@ -44,6 +44,13 @@ export type CollectedStylesheet = {
    * artifact builder (collect-keyframes). */
   keyframes: AnyRecord[];
   diagnostics: Diagnostic[];
+  /**
+   * Per-theme variable tables (Phase 12). Keyed by theme name; populated from
+   * rules whose selector is a single class matching a registered theme name
+   * (e.g. `.sunset { --color-accent: #ef4444; }`). Absent when no themes are
+   * configured.
+   */
+  themeVariables?: Map<string, VariableMap>;
 };
 
 type Selector = { type: string; name?: string; kind?: string };
@@ -100,6 +107,15 @@ function lowerSelectorGroup(
         : null;
       if (groupSpec) {
         conditions.push(groupSpec);
+        continue;
+      }
+      // Phase 12 — named-theme variant: `:where(.themeName, .themeName *)`
+      // appended to the utility class by `@custom-variant name (...)`.
+      const themeSpec = kind === 'where'
+        ? matchThemeSelector(token as unknown as AnyRecord)
+        : null;
+      if (themeSpec) {
+        conditions.push(themeSpec);
         continue;
       }
       recordUnsupported(`:${kind ?? 'unknown'}`);
@@ -184,6 +200,42 @@ function matchDataAttribute(token: AnyRecord): ConditionSpec | null {
 }
 
 /**
+ * Match Tailwind's named-theme variant selector inside `:where(...)`:
+ * `:where(.themeName, .themeName *)`. The compiler injects these via
+ * `@custom-variant <name> (&:where(.<name>, .<name> *))` for each entry in
+ * `extraThemes`. Returns a `theme` condition spec, or null when the shape
+ * does not match.
+ *
+ * Lightningcss parses `:where(.sunset, .sunset *)` as a `where` pseudo-class
+ * with two selector lists: `[class(sunset)]` and
+ * `[class(sunset), combinator(descendant), universal]`.
+ */
+function matchThemeSelector(token: AnyRecord): ConditionSpec | null {
+  const lists = token.selectors as Selector[][] | undefined;
+  if (!Array.isArray(lists) || lists.length !== 2) return null;
+
+  const first = lists[0] as Selector[] | undefined;
+  const second = lists[1] as Selector[] | undefined;
+  if (!Array.isArray(first) || first.length !== 1) return null;
+  if (!Array.isArray(second) || second.length !== 3) return null;
+
+  const classToken = first[0] as Selector | undefined;
+  if (classToken?.type !== 'class' || typeof classToken.name !== 'string') return null;
+
+  const descendantClass = second[0] as Selector | undefined;
+  const combinator = second[1] as Selector | undefined;
+  const descendantUniversal = second[2] as Selector | undefined;
+  if (descendantClass?.type !== 'class' || descendantClass.name !== classToken.name) return null;
+  if (combinator?.type !== 'combinator') return null;
+  if (descendantUniversal?.type !== 'universal') return null;
+
+  // Reject built-in names that collide with color-scheme conditions.
+  if (classToken.name === 'light' || classToken.name === 'dark') return null;
+
+  return { kind: 'theme', name: classToken.name };
+}
+
+/**
  * Flatten one lightningcss declaration record into collected declarations.
  * Shared by style-rule collection and @keyframes bodies (collect-keyframes).
  * `custom` records are harvested into `variables` when `intoCustomProps`.
@@ -245,12 +297,21 @@ export function flattenDeclaration(
   return [collected];
 }
 
-export function collectStylesheet(css: string): CollectedStylesheet {
+export type CollectOptions = {
+  /** Registered theme names (Phase 12). When provided, rules whose selector is
+   * a single class matching one of these names are harvested into
+   * `themeVariables` instead of the regular `classes` map. */
+  themeNames?: string[];
+};
+
+export function collectStylesheet(css: string, options?: CollectOptions): CollectedStylesheet {
   const variables: VariableMap = new Map();
   const classes = new Map<string, CollectedRule[]>();
   const keyframes: AnyRecord[] = [];
   const diagnostics: Diagnostic[] = [];
   const seenSelectorDiagnostics = new Set<string>();
+  const themeNames = new Set(options?.themeNames ?? []);
+  const themeVariables: Map<string, VariableMap> = new Map();
 
   /** Deduplicated WF1004 for selector shapes the runtime cannot express. */
   function recordUnsupportedSelector(key: string): void {
@@ -296,6 +357,26 @@ export function collectStylesheet(css: string): CollectedStylesheet {
       // Custom properties on class-less rules (`:root`/universal) were already
       // harvested into the global map; non-class rules carry no style data.
       if (!group.some((s) => s.type === 'class')) continue;
+
+      // Phase 12 — single-class selectors matching a registered theme name
+      // (`.sunset { --color-accent: #ef4444; }`) carry per-theme variable
+      // definitions. Harvest them into themeVariables instead of classes.
+      // This check runs BEFORE the declarations-empty guard because these
+      // rules contain ONLY custom properties (no regular declarations).
+      if (group.length === 1 && conditions.length === 0) {
+        const only = group[0] as Selector | undefined;
+        if (only?.type === 'class' && typeof only.name === 'string' && themeNames.has(only.name)) {
+          let tv = themeVariables.get(only.name);
+          if (!tv) {
+            tv = new Map();
+            themeVariables.set(only.name, tv);
+          }
+          // Re-collect custom properties into this theme's map.
+          collectDeclarations(rule, tv);
+          continue;
+        }
+      }
+
       if (declarations.length === 0) continue;
 
       // Single-class selectors (`.p-4`, `.dark\:bg-zinc-900`) carry no extra
@@ -378,5 +459,7 @@ export function collectStylesheet(css: string): CollectedStylesheet {
     },
   });
 
-  return { variables, classes, keyframes, diagnostics };
+  const result: CollectedStylesheet = { variables, classes, keyframes, diagnostics };
+  if (themeVariables.size > 0) result.themeVariables = themeVariables;
+  return result;
 }
