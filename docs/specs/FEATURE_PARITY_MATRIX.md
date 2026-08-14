@@ -19,9 +19,9 @@ Legend:
 | @custom-variant | P1 | ✓ | ✓ | Variant compiler (Phase 8: `defineVariant` authoring) |
 | @source | P0 | ✓ | ✓ | ✅ Phase 10: `compiler.sources` — official Tailwind auto-detect + `@source` + `.gitignore` |
 | @plugin | P1 | ✓ | ✓ | Isolated plugin adapter |
-| arbitrary values | P0 | ✓ | ✓ | Capability checked |
+| arbitrary values | P0 | ✓ | ✓ | Capability checked; ✅ Phase 15: `!important` modifier supported (two-tier merge, important declarations override non-important regardless of token order) |
 | arbitrary properties | P1 | ✓ | ✓ | Where representable |
-| CSS variables | P0 | ✓ | ✓ | ✅ Phase 12: static + controlled dynamic + scoped (ScopedVariables nearest-wins); `useCSSVariable` reads cascade; `updateCSSVariables` writes per-theme overrides |
+| CSS variables | P0 | ✓ | ✓ | ✅ Phase 12: static + controlled dynamic + scoped (ScopedVariables nearest-wins); `useCSSVariable` reads cascade; `updateCSSVariables` writes per-theme overrides; ✅ Phase 15: `getCSSVariable(name)` non-hook reader for event handlers/async callbacks |
 | named themes | P1 | ✓ | ✓ | ✅ Phase 12: `extraThemes` injects `@custom-variant`; artifact v2 `themes` field; ThemeStore (`setTheme`/`useWindforgeTheme`); ScopedTheme subtree override; theme-variant utilities (`sunset:`/`ocean:`) activate per current theme |
 | custom CSS | P1 | ✓ | ✓ | CSS → same IR |
 | dark mode | P0 | ✓ | ✓ | System/class strategy |
@@ -33,15 +33,15 @@ Legend:
 | media queries | P1 | capability | ✓ | Backend-specific |
 | container queries | P1 | capability | ✓ | Explicit capability model |
 | rem | P0 | ✓ | ✓ | Platform-aware conversion |
-| calc() | P1 | capability | ✓ | Native unit restrictions |
+| calc() | P1 | ✓ | ✓ | ✅ Phase 15: min()/max()/clamp() statically evaluated when arguments share a unit family (all px, or all percent); mixed units require runtime reference lengths and emit WF1002/WF1005 |
 | color functions | P1 | capability | ✓ | Native parser required |
-| safe-area env() | P1 | ✓ | ✓ | Phase 7: insets metrics API (`getInsets`/`useInsets`, optional `@windforge/react-native/safe-area` entrypoint); `env()` CSS lowering = follow-up |
+| safe-area env() | P1 | ✓ | ✓ | ✅ Phase 7: insets metrics API (`getInsets`/`useInsets`, optional `@windforge/react-native/safe-area` entrypoint); ✅ Phase 15: RTL-safe utilities (`ps-safe`/`pe-safe`/`ms-safe`/`me-safe`/`start-safe`/`end-safe`) with nested `@media (layout-direction: rtl)` in builtin @utility definitions; runtime resolution via insets store + registry version bump |
 
 ## React Native runtime
 
 | Feature | Priority | Notes |
 |---|---:|---|
-| Automatic className mapping | P0 | All standard RN components (Phase 5: styled()/prop mapping for third-party) |
+| Automatic className mapping | P0 | All standard RN components (Phase 5: styled()/prop mapping for third-party); ✅ Phase 15: `withWindforge(Component)` HOC alias of styled() |
 | Static StyleSheet lowering | P0 | Fast baseline |
 | Shared immutable style cache | P0 | Deduplicate styles (Phase 5: composed-string flyweight identity) |
 | Dynamic class lookup | P0 | Generated tables first (Phase 5) |
@@ -51,7 +51,7 @@ Legend:
 | Native style cache | P1 | C++/native if benchmarked |
 | JSI backend | P1 | Narrow interface |
 | Nitro adapter | P1 | Optional implementation backend |
-| Native metrics | P1 | Phase 7: JS capability layer — `getMetrics`/`useMetrics` (colorScheme/platform/window/fontScale/pixelRatio/layoutDirection/insets), `rtl:`/`ltr:` variants; native `getMetrics()` stays design-only |
+| Native metrics | P1 | Phase 7: JS capability layer — `getMetrics`/`useMetrics` (colorScheme/platform/window/fontScale/pixelRatio/layoutDirection/insets), `rtl:`/`ltr:` variants; native `getMetrics()` stays design-only; ✅ Phase 15: `LayoutDirection` component overrides direction per subtree via context; nearest-wins with device fallback |
 | Suspended subtree handling | P1 | Must be tested |
 
 ## Reanimated
@@ -76,7 +76,7 @@ Legend:
 |---|---:|---|
 | React Native Web | P0 | Same className API |
 | deterministic CSS generation | P0 | ✅ Phase 13: `generate({ platform: 'web' })` produces identical CSS across builds |
-| SSR-safe output | P1 | ✅ Phase 13: no runtime stylesheet injection; CSS emitted at build time |
+| SSR-safe output | P1 | ✅ Phase 13: no runtime stylesheet injection; CSS emitted at build time; ✅ Phase 15: unresolved CSS variables during SSR fail silently (no throw); `initialThemes` prop detects SSR-rendered theme class on `<html>` to prevent flicker |
 | media queries | P0 | ✅ Phase 13: pure CSS lowering via Tailwind compiler |
 | hover/focus/active | P0 | ✅ Phase 13: web-css backend returns `{ className }`; browser evaluates pseudo-selectors in emitted CSS |
 | container queries | P1 | CSS lowering |
@@ -92,7 +92,7 @@ Legend:
 |---|---:|---|
 | Metro plugin | P0 | ✅ Phase 10: `@windforge/metro` verified on Expo (`apps/example`) and bare RN CLI (`apps/bare`); `MetroConfigLike` keeps it Expo-agnostic |
 | CLI | P0 | |
-| diagnostics | P0 | Phase 5: runtime counters + WF2001/WF2002 warn-once |
+| diagnostics | P0 | Phase 5: runtime counters + WF2001/WF2002 warn-once; ✅ Phase 15: `useResolveClassNames(className)` hook alias of `useWindforgeStyle` for explicit className→style resolution |
 | IntelliSense metadata | P1 | |
 | source maps | P1 | |
 | HMR | P0 | ✅ Phase 10: file watcher regenerates `.windforge/generated.js` inside the project root; Metro invalidates without restart (no Metro-internals patching) |

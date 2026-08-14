@@ -879,3 +879,39 @@ Note: hover/focus/active states verified structurally via CSS output inspection 
 Only now evaluate the Flutter backend.
 
 The existing IR and frontend architecture should make this an additional backend rather than a compiler rewrite.
+
+## Phase 15 — Uniwind Pro API parity ✅
+
+**Goal:** Reach feature-parity with the public Uniwind Pro release notes (v1.0.1–v1.5.1, April–July 2026) on the Windforge JS-first stack. Adds missing APIs (`getCSSVariable`, `withWindforge`, `useResolveClassNames`, `LayoutDirection`), fixes bug-class edge cases discovered by Uniwind Pro (flex shorthand parsing, combined variants, joined border radii), implements safe-area RTL utilities via nested media in builtin `@utility` definitions, extends static evaluation to min()/max()/clamp(), widens peer deps to RN 0.87 + Vite 8, and hardens SSR behavior. No C++/Nitro binaries are copied; all implementation is from first principles using Windforge's existing architecture.
+
+### Done
+
+- **A1. `getCSSVariable(name)`**: non-hook CSS variable reader for event handlers/async callbacks. Same cascade as `useCSSVariable` minus subscription: global overrides → artifact theme table (per-theme then same-artifact `default`). Exported from `@windforge/react-native`. Tests verify reads from both sources and undefined for unknown names.
+- **A2. Multiline class names**: already handled by `split(/\s+/)` regex in `resolve.ts`; added explicit test verifying newline/carriage-return separation works.
+- **A3. Combined variants verification**: Phase 11 two-tier merge already separates base vs variant declarations correctly; verified by test confirming `hover:bg-blue-500 active:bg-red-500` coexist without overriding each other.
+- **B1. `withWindforge(Component)` HOC**: alias of `styled()` matching Uniwind's naming. Accepts optional prop mappings array. Exported from `@windforge/react-native`. Test verifies className→style resolution identical to styled().
+- **B2. `useResolveClassNames(className)` hook**: alias of `useWindforgeStyle` for explicit className-to-style resolution. Exported from `@windforge/react-native`.
+- **B3. `LayoutDirection` component**: context-based RTL/LTR override per subtree. Nearest-wins semantics with device direction fallback. Condition evaluation respects the override so `rtl:`/`ltr:` variants activate correctly. Caveat: does not auto-flip styles (only affects condition evaluation).
+- **B4. `!important` support**: lightningcss `declaration.important` flag propagated through collector/lower into IR declaration priority (IMPORTANT_DECLARATION_PRIORITY=20 vs DEFAULT=10). Two-tier merge ensures important declarations override non-important regardless of token order. Works across base and variant tiers.
+- **B5. Safe area RTL utilities**: six builtin `@utility` definitions (`ps-safe`/`pe-safe`/`ms-safe`/`me-safe`/`start-safe`/`end-safe`) injected automatically during compile. Each uses LTR physical env() inset at top level + nested `@media (layout-direction: rtl)` swapping to the mirrored inset. Collector parses nested media envelopes inside style rules. New `safe-area` IR value kind resolved against the platform insets store at runtime; registry version bumped on `setInsets()` to invalidate caches. Per-theme deep-variable fallback fixed (themes[theme] exists but omits var → falls back to themes['default'] within the SAME artifact).
+- **B6. Bug-fix verifications**: flex-1 correctly lowers to flexGrow=1/flexShrink=1/flexBasis='0%' with exact sourceOrder; joined corner utilities (`rounded-tl-lg rounded-br-xl`) apply independently with no diagnostics; line-clamp documented as unsupported on native (no RN style equivalent, requires numberOfLines prop).
+- **C1. min()/max()/clamp() CSS functions**: build-time static evaluation when all arguments share a unit family (all px or all percent). Mixed units emit WF1002/WF1005 (runtime reference lengths unavailable at build time). Integrated in both typed path (`typedMathFunctionIR` in lower.ts) and unparsed path (`evaluateMathFunction` in resolve.ts); CalcParser.parseFactor also recurses into nested min/max/clamp inside calc(). Box shorthands supported via typedDimensionIR chain.
+- **C2. Web theme initialization**: `initialThemes?: string[]` prop on WindforgeProvider. On mount, layout effect checks `document.documentElement.classList` for the first matching candidate and calls `setTheme()` before the first paint. Prevents flash-of-default-theme when SSR renders `<html class="sunset">`. Guarded by Platform.OS check and document availability check. `__detectInitialTheme` exported for unit tests.
+- **C3. Silent CSS variable warning for SSR**: unresolved variables and calc/runtime values return undefined instead of throwing when `typeof window === 'undefined'`. Outside SSR, still throws so misconfigurations surface immediately. Parity with Uniwind Pro 1.2.0 silent-variable-SSR fix adapted to Windforge's throw-on-unresolved contract.
+- **C4. RN 0.87 + Vite 8 compatibility**: peer dependency ranges widened to `react-native: >=0.86 <0.88` (packages/react-native, reanimated, native) and `vite: ^5 || ^6 || ^7 || ^8` (packages/vite). Example app stays at RN 0.86.2 (verified working) while declaring forward compatibility with 0.87.
+
+### Decisions
+
+- **No proprietary code copied.** All features implemented from first principles using Windforge's existing IR/resolver/compiler architecture. Facts/patterns drawn only from public Uniwind Pro release notes and MIT OSS code.
+- **min()/max() are statically evaluated.** Build-time resolution is primary per Windforge's architecture. Runtime eval would require container dimensions unavailable at resolve time. Mixed-unit expressions documented as unsupported until a dedicated evaluator ships.
+- **line-clamp left unsupported.** Uniwind Pro's fix targets their proprietary native renderer. React Native has no `-webkit-line-clamp` style property; text truncation uses the `numberOfLines` prop on `<Text>`. Documented in tests rather than inventing a mapping.
+- **Safe-area utilities use builtin @utility injection.** Avoids requiring user config for basic RTL-safe-area functionality. Injected after user input, before extraCss, so users can still override.
+- **Nested calc(min()) deferred.** Lightningcss's typed serialization for sums containing nested functions requires deeper AST walking. Direct min()/max()/clamp() covers the primary Uniwind Pro 1.5.0 parity case.
+- **Peer dep range widening ≠ full verification.** RN 0.87 and Vite 8 peer ranges widened based on stable releases. Actual integration testing against 0.87's native build and Vite 8's Rolldown pipeline deferred to a future verification pass.
+
+### Scope notes
+
+- Deeply themed variable fallback (Phase 15-B5) applies within a single artifact. Cross-artifact theme traversal follows the existing reverse-order walk.
+- LayoutDirection context only affects condition evaluation (`rtl:`/`ltr:` variants). Style auto-flipping is out of scope.
+- The web-css backend does not support safe-area runtime values; the builtin utilities rely on browser env() support natively.
+- SSR silent-fail returns undefined for unresolved variables/calc. Consumers must handle undefined gracefully in style objects (RN ignores undefined values).

@@ -19,12 +19,14 @@
  * transition.
  */
 import { memo, useEffect, useRef, useState } from 'react';
-import { ScrollView } from 'react-native';
+import { Pressable, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Animated, { interpolateColor, useAnimatedStyle } from 'react-native-reanimated';
 import {
+  LayoutDirection,
   Text,
   View,
+  getCSSVariable,
   getRuntimeDiagnostics,
   useMetrics,
   useWindforgeStyle,
@@ -77,6 +79,34 @@ const ThemeTransitionBox = memo(function ThemeTransitionBox() {
     </View>
   );
 });
+
+/**
+ * Phase 15 — demonstrates `getCSSVariable(name)` outside a React render.
+ * Reads the artifact theme table directly on tap, proving the non-hook path
+ * works in event handlers (where useCSSVariable cannot be called).
+ */
+function GetCSSVariableDemo() {
+  const [value, setValue] = useState<string | undefined>();
+  const [reads, setReads] = useState(0);
+  return (
+    <View className="mt-2 gap-2">
+      <Pressable
+        className="rounded-lg bg-zinc-200 p-3 active:bg-zinc-300 dark:bg-zinc-700 dark:active:bg-zinc-600"
+        onPress={() => {
+          setValue(getCSSVariable('--color-accent'));
+          setReads((n) => n + 1);
+        }}
+      >
+        <Text className="text-sm text-zinc-700 dark:text-zinc-300">
+          Tap to read --color-accent via getCSSVariable()
+        </Text>
+      </Pressable>
+      <Text className="text-xs text-zinc-600 dark:text-zinc-500">
+        {reads === 0 ? 'Not yet read' : `Read ${reads}x → ${value ?? '(undefined)'}`}
+      </Text>
+    </View>
+  );
+}
 
 export default function MetricsScreen() {
   const metrics = useMetrics();
@@ -152,6 +182,52 @@ export default function MetricsScreen() {
             Animated theme progress (useAnimatedThemeProgress)
           </Text>
           <ThemeTransitionBox />
+
+          {/* Phase 15 — LayoutDirection subtree override. The inner subtree forces
+              RTL regardless of device direction; rtl:/ltr: variants activate
+              accordingly inside the subtree. */}
+          <Text className="mt-4 text-sm font-semibold text-zinc-900 dark:text-zinc-300">
+            LayoutDirection subtree override (Phase 15)
+          </Text>
+          <View className="mt-2 gap-2">
+            <View className="rounded-lg bg-zinc-200 p-3 dark:bg-zinc-700">
+              <Text className="text-xs text-zinc-600 dark:text-zinc-400">
+                Device direction: {metrics.layoutDirection}
+              </Text>
+            </View>
+            <LayoutDirection direction="rtl">
+              <View className="rounded-lg bg-emerald-500 p-3 rtl:bg-indigo-500 ltr:bg-emerald-500">
+                <Text className="text-sm font-semibold text-white">
+                  Forced RTL subtree · shows indigo via rtl: variant
+                </Text>
+              </View>
+            </LayoutDirection>
+            <LayoutDirection direction="ltr">
+              <View className="rounded-lg bg-indigo-500 p-3 rtl:bg-emerald-500 ltr:bg-indigo-500">
+                <Text className="text-sm font-semibold text-white">
+                  Forced LTR subtree · stays indigo via ltr: variant
+                </Text>
+              </View>
+            </LayoutDirection>
+          </View>
+
+          {/* Phase 15 — getCSSVariable outside React. Tap to read --color-accent
+              from the artifact theme table without a hook. */}
+          <Text className="mt-4 text-sm font-semibold text-zinc-900 dark:text-zinc-300">
+            getCSSVariable (non-hook, Phase 15)
+          </Text>
+          <GetCSSVariableDemo />
+
+          {/* Phase 15 — safe-area RTL utilities. ps-safe / pe-safe apply padding
+              that swaps between left/right insets when direction flips. */}
+          <Text className="mt-4 text-sm font-semibold text-zinc-900 dark:text-zinc-300">
+            Safe-area RTL utilities (ps-safe / pe-safe, Phase 15)
+          </Text>
+          <View className="mt-2 rounded-lg border border-zinc-300 bg-white ps-safe pe-safe py-3 dark:border-zinc-700 dark:bg-zinc-800">
+            <Text className="text-sm text-zinc-700 dark:text-zinc-300">
+              ps-safe + pe-safe padding (device direction: {metrics.layoutDirection})
+            </Text>
+          </View>
 
           <Text className="mt-4 text-sm font-semibold text-zinc-900 dark:text-zinc-300">
             Runtime diagnostics
