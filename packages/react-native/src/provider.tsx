@@ -27,6 +27,7 @@ import type { ConditionState } from './state.js';
 import {
   getThemeState,
   initThemeColorScheme,
+  setTheme,
   subscribeTheme,
   syncThemeColorScheme,
 } from './theme.js';
@@ -119,10 +120,48 @@ export type WindforgeProviderProps = {
   children: ReactNode;
   /** Override the color scheme instead of following the system. */
   colorScheme?: 'light' | 'dark';
+  /**
+   * Phase 15 — seed the initial theme from an existing class on the document
+   * element (web only). When SSR renders `<html class="sunset">` or similar,
+   * passing `initialThemes={['light', 'dark', 'sunset']}` makes the client
+   * detect the matching class at mount and apply it before the first paint,
+   * preventing a flash-of-default-theme. First match wins. Ignored on native.
+   */
+  initialThemes?: string[];
 };
 
+/** Detect the current theme from document.documentElement.classList (web).
+ * Returns null when no candidate matches or when not running on web.
+ * Exported for unit tests (`__detectInitialTheme`). */
+export function __detectInitialTheme(candidates: string[]): string | null {
+  if (Platform.OS !== 'web') return null;
+  // Guard for environments where document is unavailable (SSR pre-hydration).
+  const doc = (globalThis as Record<string, unknown>).document as
+    | { documentElement?: { classList?: { contains(name: string): boolean } } }
+    | undefined;
+  if (!doc) return null;
+  const classList = doc.documentElement?.classList;
+  if (!classList) return null;
+  for (const name of candidates) {
+    if (classList.contains(name)) return name;
+  }
+  return null;
+}
+
 export function WindforgeProvider(props: WindforgeProviderProps): ReactNode {
-  const { colorScheme } = props;
+  const { colorScheme, initialThemes } = props;
+
+  // Phase 15 — seed the ThemeStore from the document's class list before the
+  // first paint so SSR-rendered themes don't flicker back to default.
+  useLayoutEffect(() => {
+    if (!initialThemes || initialThemes.length === 0) return undefined;
+    const detected = __detectInitialTheme(initialThemes);
+    if (detected !== null && getThemeState().requested === 'system') {
+      setTheme(detected);
+    }
+    return undefined;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once on mount
+  }, []);
 
   // The override participates in the first paint; without a layout effect
   // subscribers would render one frame with the system scheme.

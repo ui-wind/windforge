@@ -54,6 +54,10 @@ import {
   type GroupStates,
 } from './group.js';
 import { useConditionState } from './provider.js';
+import {
+  overrideDirection,
+  useLayoutDirectionOverride,
+} from './layout-direction.js';
 import type { ClassPropMapping } from './prop-mapping/registry.js';
 import { getArtifacts } from './registry.js';
 import type { ReactNativeStyle, ResolutionContext } from './resolve.js';
@@ -188,11 +192,20 @@ export function createStyledElement<Props extends object>(
     ref: Ref<unknown>,
   ) {
     const backend = getBackend();
+    // Phase 15 — a subtree <LayoutDirection> override flips `rtl:`/`ltr:`
+    // evaluation. It lives in React context, so resolution must happen in
+    // JS (the native link path reads the provider store only); when an
+    // override is present we always subscribe to condition changes.
+    const directionOverride = useLayoutDirectionOverride();
     // Only backends that deliver through React props need to re-render on
     // condition changes; subscribing=false keeps the snapshot without it.
     // Non-linkable mappings (secondary style surfaces) always subscribe —
     // the native protocol cannot deliver them.
-    const state = useConditionState(linkable ? backend.requiresContext() : true);
+    const subscribe =
+      directionOverride !== null ? true : linkable ? backend.requiresContext() : true;
+    const globalState = useConditionState(subscribe);
+    // Same object identity when no override changes the effective direction.
+    const state = overrideDirection(globalState, directionOverride);
     // Group context flows into componentState: styled descendants evaluate
     // `group-*` conditions against the nearest providers. Consuming the
     // context is also the JS delivery path — provider state changes
@@ -224,9 +237,13 @@ export function createStyledElement<Props extends object>(
 
     // Native delivery resolves without component state: skip linking when
     // this component carries data props or its classes depend on group
-    // state — those resolve through React props instead.
+    // state — those resolve through React props instead. Also skip linking
+    // when a subtree layout-direction override is active (state !==
+    // globalState): the native path evaluates conditions from the provider
+    // store and cannot see the JS-level override, so resolve in JS.
     const linkEligible =
       linkable &&
+      state === globalState &&
       data === undefined &&
       !(
         groupStates !== null &&
@@ -305,8 +322,11 @@ function useInteractiveState(options: {
     data,
   } = options;
   const state = useConditionState(true);
+  const directionOverride = useLayoutDirectionOverride();
+  // Subtree layout-direction override (Phase 15) — same identity when inactive.
+  const effectiveState = overrideDirection(state, directionOverride);
   const groupStates = useGroupStates();
-  const themeCtx = useThemeContext(state);
+  const themeCtx = useThemeContext(effectiveState);
   const componentState = useMemo<ComponentState>(
     () => ({
       pressed,
@@ -323,7 +343,13 @@ function useInteractiveState(options: {
     () => mergeGroupStates(groupStates, groupNames, { pressed, hovered, focused, disabled }),
     [groupStates, groupNames, pressed, hovered, focused, disabled],
   );
-  return { state, componentState, groupNames, providedGroups, themeCtx };
+  return {
+    state: effectiveState,
+    componentState,
+    groupNames,
+    providedGroups,
+    themeCtx,
+  };
 }
 
 /** Wrap the host element in a group provider when a marker is present. */

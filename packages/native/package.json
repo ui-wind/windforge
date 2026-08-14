@@ -28,7 +28,7 @@
     "@windforge/react-native": "workspace:*"
   },
   "peerDependencies": {
-    "react-native": ">=0.86 <0.87"
+    "react-native": ">=0.86 <0.88"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",

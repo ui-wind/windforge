@@ -15,7 +15,7 @@
 import { useSyncExternalStore } from 'react';
 import { getThemeState, subscribeTheme } from './theme.js';
 import { useScopedVariables, type VariableOverrides } from './scoped.js';
-import { __bumpRegistryVersion } from './registry.js';
+import { __bumpRegistryVersion, getArtifacts } from './registry.js';
 import { tokensToString } from './token-print.js';
 
 /** theme name → variable name → override value. */
@@ -53,6 +53,45 @@ export function updateCSSVariables(theme: string, vars: Record<string, string>):
  * Subscribes to the ThemeStore so values update on theme change. Returns
  * undefined when no source provides the variable.
  */
+/**
+ * Read a CSS variable value outside of React components.
+ * Same cascade as useCSSVariable but without subscription:
+ *   global overrides[currentTheme] → artifact.themes[currentTheme or 'default'].
+ *
+ * Does NOT read scoped variables (no React context available outside
+ * the component tree). Use in event handlers, async callbacks, utility
+ * modules where useCSSVariable() cannot be called.
+ */
+export function getCSSVariable(name: string): string | undefined {
+  // 1. Global overrides for the current theme.
+  const theme = getThemeState().current;
+  const globalVal = globalOverrides.get(theme)?.get(name);
+  if (globalVal !== undefined) return globalVal;
+
+  // 2. Artifact theme table — per-theme first, then base 'default'. A theme
+  //    that exists but omits a variable falls back to the SAME artifact's
+  //    default table (Phase 15 — deeply themed variables traverse both).
+  const artifacts = getArtifacts();
+  for (let i = artifacts.length - 1; i >= 0; i--) {
+    const themes = artifacts[i]?.themes;
+    if (!themes) continue;
+    const entry = themes[theme]?.find((e) => e.name === name);
+    if (entry && Array.isArray(entry.tokens)) {
+      const result = tokensToString(entry.tokens);
+      if (result) return result;
+    }
+    if (theme !== 'default') {
+      const fallback = themes['default']?.find((e) => e.name === name);
+      if (fallback && Array.isArray(fallback.tokens)) {
+        const result = tokensToString(fallback.tokens);
+        if (result) return result;
+      }
+    }
+  }
+
+  return undefined;
+}
+
 export function useCSSVariable(name: string): string | undefined {
   // Subscribe to theme changes; the value itself comes from the resolver's
   // cascade, but we need re-renders when the active theme changes.
@@ -69,20 +108,24 @@ export function useCSSVariable(name: string): string | undefined {
   if (globalVal !== undefined) return globalVal;
 
   // 3. Artifact theme table — per-theme override first, then base @theme
-  //    values stored under the "default" key by the compiler.
-  // Imported lazily to avoid circular deps at module init time.
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { getArtifacts } = require('./registry.js') as {
-    getArtifacts: () => readonly import('./types.js').RuntimeArtifact[];
-  };
+  //    values stored under the "default" key by the compiler. Falls back
+  //    to the same artifact's default table when the current theme omits
+  //    the variable (Phase 15).
   const artifacts = getArtifacts();
   for (let i = artifacts.length - 1; i >= 0; i--) {
-    const entries = artifacts[i]?.themes?.[theme] ?? artifacts[i]?.themes?.['default'];
-    if (!entries) continue;
-    const entry = entries.find((e) => e.name === name);
+    const themes = artifacts[i]?.themes;
+    if (!themes) continue;
+    const entry = themes[theme]?.find((e) => e.name === name);
     if (entry && Array.isArray(entry.tokens)) {
       const result = tokensToString(entry.tokens);
       if (result) return result;
+    }
+    if (theme !== 'default') {
+      const fallback = themes['default']?.find((e) => e.name === name);
+      if (fallback && Array.isArray(fallback.tokens)) {
+        const result = tokensToString(fallback.tokens);
+        if (result) return result;
+      }
     }
   }
 

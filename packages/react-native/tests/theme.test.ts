@@ -5,10 +5,18 @@
  * variable cascade through resolver, cache invalidation on theme change,
  * useCSSVariable + updateCSSVariables.
  */
-import { describe, expect, it, beforeEach } from 'vitest';
+import { describe, expect, it, beforeEach, vi } from 'vitest';
+
+// variables.js -> theme.js -> backends -> react-native; the real entry is
+// Flow-typed and unparseable by vitest, so mock the single function the
+// fabric backend needs (same pattern as backends.test.ts).
+vi.mock('react-native', () => ({
+  processColor: (color: string) => parseInt(color.slice(1), 16),
+}));
 import { __resetRegistry, registerArtifact } from '../src/registry.js';
 import { __clearStyleCache, resolveClassNames, toReactNativeValue } from '../src/resolve.js';
 import { evaluateCondition } from '../src/conditions.js';
+import { getCSSVariable, updateCSSVariables } from '../src/variables.js';
 import type { ConditionState } from '../src/state.js';
 import type { RuntimeArtifact } from '../src/types.js';
 
@@ -188,11 +196,76 @@ describe('variable cascade', () => {
     });
   });
 
-  it('throws on unresolved variable references', () => {
-    expect(() => toReactNativeValue({ kind: 'variable', name: '--missing' })).toThrow();
+  it('throws on unresolved variable references (client)', () => {
+    const originalWindow = (globalThis as Record<string, unknown>).window;
+    (globalThis as Record<string, unknown>).window = {};
+    try {
+      expect(() => toReactNativeValue({ kind: 'variable', name: '--missing' })).toThrow();
+    } finally {
+      if (originalWindow === undefined) delete (globalThis as Record<string, unknown>).window;
+      else (globalThis as Record<string, unknown>).window = originalWindow;
+    }
   });
 
   it('passes through non-variable token refs unchanged', () => {
     expect(toReactNativeValue({ kind: 'token', ref: 'colors.primary' })).toBe('colors.primary');
+  });
+
+  it('falls back to the default theme when a per-theme entry is missing', () => {
+    // Phase 15 parity with Uniwind Pro 1.1.1 — deeply themed variables must
+    // traverse the artifact theme table correctly: if the current theme
+    // doesn't define a variable, resolution falls back to `themes.default`.
+    // Register an artifact where `--only-in-default` exists under "default"
+    // but not under "sunset"; resolving against sunset should still find it.
+    const deepArtifact: RuntimeArtifact = {
+      ...artifact,
+      hash: 'deep',
+      styles: {
+        ...artifact.styles,
+        'bg-deep': {
+          base: [
+            {
+              property: 'backgroundColor',
+              value: { kind: 'variable', name: '--only-in-default' },
+              sourceOrder: 0,
+            },
+          ],
+        },
+      },
+      themes: {
+        ...(artifact.themes ?? {}),
+        default: [{ name: '--only-in-default', tokens: [{ type: 'hash', value: 'abcdef' }] }],
+      },
+    };
+    __resetRegistry();
+    registerArtifact(deepArtifact);
+    // Resolving against sunset falls back to themes.default.
+    expect(
+      resolveClassNames('bg-deep', { ...baseState, theme: 'sunset' }, undefined, {
+        theme: 'sunset',
+      }),
+    ).toEqual({ backgroundColor: '#abcdef' });
+  });
+});
+
+describe('getCSSVariable (non-hook)', () => {
+  beforeEach(() => {
+    __resetRegistry();
+    registerArtifact(artifact);
+  });
+
+  it('reads from artifact theme table for current theme', () => {
+    // Default theme is 'light' per ThemeStore initial state.
+    const value = getCSSVariable('--color-accent');
+    expect(value).toBe('#3b82f6');
+  });
+
+  it('returns undefined for unknown variables', () => {
+    expect(getCSSVariable('--nonexistent')).toBeUndefined();
+  });
+
+  it('reads global overrides when present', () => {
+    updateCSSVariables('light', { '--color-accent': '#ff0000' });
+    expect(getCSSVariable('--color-accent')).toBe('#ff0000');
   });
 });

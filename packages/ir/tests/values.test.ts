@@ -20,6 +20,7 @@ describe('classifyValue', () => {
       'CONDITIONAL',
     ],
     [{ kind: 'runtime', ref: 'animated.opacity' }, 'RUNTIME'],
+    [{ kind: 'safe-area', inset: 'left' }, 'RUNTIME'],
   ];
 
   for (const [value, expected] of cases) {

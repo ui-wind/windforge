@@ -90,6 +90,60 @@ function dimensionToPx(value: TokenRecord): number | null {
 }
 
 /**
+ * Evaluate a min()/max()/clamp() function token list statically. All arguments
+ * must resolve to the same unit family (all px, or all percent). Mixed units
+ * require runtime reference lengths that aren't available at build time → null.
+ *
+ * clamp(MIN, VAL, MAX) follows CSS order; result is max(MIN, min(VAL, MAX)).
+ */
+export function evaluateMathFunction(
+  name: string,
+  args: CssToken[],
+): ResolvedNumeric | null {
+  // Split on top-level comma tokens.
+  const groups: CssToken[][] = [];
+  let current: CssToken[] = [];
+  for (const token of args) {
+    if (token.type === 'comma') {
+      groups.push(current);
+      current = [];
+      continue;
+    }
+    current.push(token);
+  }
+  groups.push(current);
+  const resolved = groups.map((g) => CalcParser.parse(g));
+  if (resolved.some((r) => r === null)) return null;
+  const values = resolved as ResolvedNumeric[];
+  if (values.length === 0) return null;
+
+  // Determine effective unit — zero-valued unitless entries are compatible with
+  // any unit (CSS spec allows mixing 0 with dimensional values in min/max).
+  let effectiveUnit: 'px' | 'percent' | 'none' = 'none';
+  for (const v of values) {
+    if (v.unit === 'none') {
+      if (v.value !== 0) return null;
+      continue;
+    }
+    if (effectiveUnit === 'none') effectiveUnit = v.unit;
+    else if (v.unit !== effectiveUnit) return null;
+  }
+
+  const numbers = values.map((v) => v.value);
+  let result: number;
+  if (name === 'min') result = Math.min(...numbers);
+  else if (name === 'max') result = Math.max(...numbers);
+  else if (name === 'clamp') {
+    if (values.length !== 3) return null;
+    // clamp(MIN, VAL, MAX) = max(MIN, min(VAL, MAX))
+    result = Math.min(Math.max(numbers[1]!, numbers[0]!), numbers[2]!);
+  } else {
+    return null;
+  }
+  return { value: result, unit: effectiveUnit };
+}
+
+/**
  * Evaluate a single (already var-substituted) token to a static value.
  * Used by transform lowering for multi-value properties where per-value
  * `resolveNumeric` does not apply. Returns null for anything non-static.
@@ -112,9 +166,17 @@ export function resolveTokenValue(token: CssToken): ResolvedNumeric | null {
       return px === null ? null : { value: px, unit: 'px' };
     }
     case 'function': {
-      if ((record.name as string) !== 'calc') return null;
-      const args = record.arguments as CssToken[] | undefined;
-      return args ? CalcParser.parse(args) : null;
+      const fnName = record.name as string;
+      if (fnName === 'calc') {
+        const args = record.arguments as CssToken[] | undefined;
+        return args ? CalcParser.parse(args) : null;
+      }
+      // Phase 15 — min()/max()/clamp() for multi-value properties.
+      if (fnName === 'min' || fnName === 'max' || fnName === 'clamp') {
+        const args = record.arguments as CssToken[] | undefined;
+        return args ? evaluateMathFunction(fnName, args) : null;
+      }
+      return null;
     }
     case 'parenthesized': {
       const inner = record.value as CssToken[] | undefined;
@@ -157,7 +219,6 @@ class CalcParser {
     if (result === null || parser.index < parser.tokens.length) return null;
     return result;
   }
-
   private peek(): CssToken | undefined {
     return this.tokens[this.index];
   }
@@ -233,10 +294,19 @@ class CalcParser {
         return px === null ? null : { value: px, unit: 'px' };
       }
       case 'function': {
-        if ((record.name as string) !== 'calc') return null;
-        this.index += 1;
-        const args = record.arguments as CssToken[] | undefined;
-        return args ? CalcParser.parse(args) : null;
+        const fnName = record.name as string;
+        if (fnName === 'calc') {
+          this.index += 1;
+          const args = record.arguments as CssToken[] | undefined;
+          return args ? CalcParser.parse(args) : null;
+        }
+        // Phase 15 — allow nested min()/max()/clamp() inside calc().
+        if (fnName === 'min' || fnName === 'max' || fnName === 'clamp') {
+          this.index += 1;
+          const args = record.arguments as CssToken[] | undefined;
+          return args ? evaluateMathFunction(fnName, args) : null;
+        }
+        return null;
       }
       case 'parenthesized': {
         this.index += 1;
@@ -282,13 +352,26 @@ export function resolveNumeric(
         return px === null ? null : { value: px, unit: 'px' };
       }
       case 'function': {
-        if ((record.name as string) === 'calc') {
+        const fnName = record.name as string;
+        if (fnName === 'calc') {
           const args = record.arguments as CssToken[] | undefined;
           const result = args ? CalcParser.parse(args) : null;
           if (result === null) {
             diagnostics.push({
               code: 'WF1002',
               message: `Could not evaluate "${printTokens(tokens)}"`,
+            });
+          }
+          return result;
+        }
+        // Phase 15 — min()/max()/clamp() static evaluation.
+        if (fnName === 'min' || fnName === 'max' || fnName === 'clamp') {
+          const args = record.arguments as CssToken[] | undefined;
+          const result = args ? evaluateMathFunction(fnName, args) : null;
+          if (result === null) {
+            diagnostics.push({
+              code: 'WF1002',
+              message: `Could not evaluate "${printTokens(tokens)}" as a static value`,
             });
           }
           return result;

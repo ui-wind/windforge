@@ -151,6 +151,39 @@ describe('Pressable interaction state', () => {
     expect(host.props.style).toEqual({});
   });
 
+  it('combined variants coexist: each activates only from its own state', () => {
+    // Phase 15 parity with Uniwind Pro 1.4.0 "Combined variants" fix:
+    // two state variants on the same component must not clobber each other
+    // when only one is active, and when both are active the later token wins.
+    let renderer!: ReturnType<typeof create>;
+    act(() => {
+      renderer = create(
+        createElement(Pressable, { className: 'hover:bg-emerald-500 active:bg-red-500' }),
+      );
+    });
+    const host = renderer.root.findByType('Pressable' as never);
+    expect(host.props.style).toEqual({});
+    // Hover only → hover declaration applies, active stays dormant.
+    act(() => {
+      host.props.onHoverIn({});
+    });
+    expect(host.props.style).toEqual({ backgroundColor: '#10b981' });
+    // Hover + press → press declaration wins (later token in source order).
+    act(() => {
+      host.props.onPressIn({});
+    });
+    expect(host.props.style).toEqual({ backgroundColor: '#ef4444' });
+    // Release → back to hover only.
+    act(() => {
+      host.props.onPressOut({});
+    });
+    expect(host.props.style).toEqual({ backgroundColor: '#10b981' });
+    act(() => {
+      host.props.onHoverOut({});
+    });
+    expect(host.props.style).toEqual({});
+  });
+
   it('applies disabled: styles from the disabled prop', () => {
     let renderer!: ReturnType<typeof create>;
     act(() => {

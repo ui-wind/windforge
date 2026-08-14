@@ -27,6 +27,21 @@ export type DeclarationIR = {
   sourceOrder?: number;
 };
 
+/** Priority for ordinary declarations. */
+export const DEFAULT_DECLARATION_PRIORITY = 10;
+/**
+ * Priority for `!important` declarations (Phase 15 — parity with the
+ * Uniwind Pro 1.1.3 `!important` fix). Higher than ordinary so an important
+ * declaration outranks a non-important one for the same property regardless
+ * of token order or specificity tier.
+ */
+export const IMPORTANT_DECLARATION_PRIORITY = 20;
+
+/** True when a declaration carries the `!important` flag. */
+export function isImportantDeclaration(declaration: DeclarationIR): boolean {
+  return (declaration.priority ?? DEFAULT_DECLARATION_PRIORITY) >= IMPORTANT_DECLARATION_PRIORITY;
+}
+
 /**
  * A variant binding: a named grouping of declarations that apply together
  * when a condition holds. Variants are how frontends express things like

@@ -12,6 +12,7 @@
 import { compile } from '@tailwindcss/node';
 import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
+import { WINDFORGE_BUILTIN_CSS } from './builtins.js';
 import type { Diagnostic } from './types.js';
 
 type TailwindCompiler = Awaited<ReturnType<typeof compile>>;
@@ -67,10 +68,15 @@ export async function prepareTailwindCompiler(
     };
   }
 
-  // Extension CSS (rendered by @windforge/extension-sdk) is appended after the
-  // WF1000 check: that check validates the entry file only, and injected
-  // blocks are position-insensitive (@utility/@theme/@custom-variant).
-  const source = options.extraCss ? `${input}\n${options.extraCss}` : input;
+  // Built-in Windforge utilities (Phase 15 safe-area classes) are injected
+  // into every compilation; Tailwind only emits them when scanned as
+  // candidates. Extension CSS (rendered by @windforge/extension-sdk) is
+  // appended after the WF1000 check: that check validates the entry file
+  // only, and injected blocks are position-insensitive
+  // (@utility/@theme/@custom-variant).
+  const source = `${input}\n${WINDFORGE_BUILTIN_CSS}${
+    options.extraCss ? `\n${options.extraCss}` : ''
+  }`;
 
   try {
     const compiler = await compile(source, {

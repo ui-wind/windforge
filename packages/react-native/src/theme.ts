@@ -95,6 +95,12 @@ export function initThemeColorScheme(scheme: 'light' | 'dark'): void {
 
 const noopSubscribe = () => () => {};
 
+/** Test helper — restore the initial store state between tests. */
+export function __resetThemeState(): void {
+  state = { requested: 'system', current: 'light' };
+  lastColorScheme = 'light';
+}
+
 /** Subscribe to theme changes and return the current snapshot. */
 export function useWindforgeTheme(subscribe = true): ThemeState {
   return useSyncExternalStore(

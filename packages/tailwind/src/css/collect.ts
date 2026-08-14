@@ -25,6 +25,8 @@ export type CollectedDeclaration = {
   property: string;
   value: unknown;
   unparsed: boolean;
+  /** True when the source declaration carried `!important` (Phase 15). */
+  important?: boolean;
   line?: number;
   column?: number;
 };
@@ -327,30 +329,34 @@ export function collectStylesheet(css: string, options?: CollectOptions): Collec
     const declarationsBlock = rule.declarations as
       | { importantDeclarations: AnyRecord[]; declarations: AnyRecord[] }
       | undefined;
-    const all = [
-      ...(declarationsBlock?.declarations ?? []),
-      // Important flags carry no extra semantics for RN lowering.
-      ...(declarationsBlock?.importantDeclarations ?? []),
-    ];
     const out: CollectedDeclaration[] = [];
-    for (const declaration of all) {
+    for (const declaration of declarationsBlock?.declarations ?? []) {
       out.push(...flattenDeclaration(declaration, target, true));
+    }
+    // Phase 15 — important declarations carry the `!important` flag through to
+    // the IR so the resolver can let them outrank ordinary declarations.
+    for (const declaration of declarationsBlock?.importantDeclarations ?? []) {
+      for (const collected of flattenDeclaration(declaration, target, true)) {
+        collected.important = true;
+        out.push(collected);
+      }
     }
     return out;
   }
 
-  function handleStyleRule(rule: AnyRecord, conditions: ConditionSpec[]): void {
-    const selectorGroups = rule.selectors as Selector[][] | undefined;
-    if (!selectorGroups) return;
-    // Custom properties declared with a class selector scope to that rule
-    // (Tailwind's `--tw-scale-x`); on class-less rules (`:root`, universal
-    // base-layer defaults) they are global defaults.
-    const hasClass = selectorGroups.some((group) =>
-      group.some((s) => s.type === 'class'),
-    );
-    const locals: VariableMap = new Map();
-    const declarations = collectDeclarations(rule, hasClass ? locals : variables);
-
+  /**
+   * Associate one declaration block with every selector group it applies to,
+   * lowering compound selectors to class name + interaction conditions.
+   * Shared by top-level style rules and CSS-nested rules (Phase 15), which
+   * carry the same selector groups with extra conditions.
+   */
+  function associateDeclarations(
+    selectorGroups: Selector[][],
+    declarations: CollectedDeclaration[],
+    conditions: ConditionSpec[],
+    locals: VariableMap,
+    rule?: AnyRecord,
+  ): void {
     for (const group of selectorGroups) {
       if (group.length === 0) continue;
 
@@ -363,7 +369,7 @@ export function collectStylesheet(css: string, options?: CollectOptions): Collec
       // definitions. Harvest them into themeVariables instead of classes.
       // This check runs BEFORE the declarations-empty guard because these
       // rules contain ONLY custom properties (no regular declarations).
-      if (group.length === 1 && conditions.length === 0) {
+      if (group.length === 1 && conditions.length === 0 && rule) {
         const only = group[0] as Selector | undefined;
         if (only?.type === 'class' && typeof only.name === 'string' && themeNames.has(only.name)) {
           let tv = themeVariables.get(only.name);
@@ -393,6 +399,55 @@ export function collectStylesheet(css: string, options?: CollectOptions): Collec
       if (locals.size > 0) ruleEntry.locals = locals;
       if (existing) existing.push(ruleEntry);
       else classes.set(lowered.className, [ruleEntry]);
+    }
+  }
+
+  function handleStyleRule(rule: AnyRecord, conditions: ConditionSpec[]): void {
+    const selectorGroups = rule.selectors as Selector[][] | undefined;
+    if (!selectorGroups) return;
+    // Custom properties declared with a class selector scope to that rule
+    // (Tailwind's `--tw-scale-x`); on class-less rules (`:root`, universal
+    // base-layer defaults) they are global defaults.
+    const hasClass = selectorGroups.some((group) =>
+      group.some((s) => s.type === 'class'),
+    );
+    const locals: VariableMap = new Map();
+    const declarations = collectDeclarations(rule, hasClass ? locals : variables);
+    associateDeclarations(selectorGroups, declarations, conditions, locals, rule);
+
+    // CSS nesting (Phase 15): `@media` nested inside the style rule — e.g.
+    // the Windforge built-in safe-area utilities. lightningcss keeps nested
+    // declarations in `nested-declarations` envelopes without selectors;
+    // they apply to the same selector groups with the media conditions
+    // added. (Nested style rules — `&` selectors — are visited separately
+    // by the top-level rule visitor with fully-resolved selectors.)
+    const nestedRules = rule.rules as AnyRecord[] | undefined;
+    if (!nestedRules) return;
+    for (const nested of nestedRules) {
+      const nestedValue = nested.value as AnyRecord | undefined;
+      if (!nestedValue || nested.type !== 'media') continue;
+      const parsed = parseMediaQuery(nestedValue.query as AnyRecord, {
+        transparentPointerCaps: true,
+      });
+      if (!parsed.ok) {
+        diagnostics.push(mediaDiagnostic(parsed));
+        continue;
+      }
+      for (const inner of (nestedValue.rules as AnyRecord[] | undefined) ?? []) {
+        const innerValue = inner.value as AnyRecord | undefined;
+        if (!innerValue || inner.type !== 'nested-declarations') continue;
+        const nestedDeclarations = collectDeclarations(
+          innerValue,
+          hasClass ? locals : variables,
+        );
+        if (nestedDeclarations.length === 0) continue;
+        associateDeclarations(
+          selectorGroups,
+          nestedDeclarations,
+          [...conditions, ...parsed.conditions],
+          locals,
+        );
+      }
     }
   }
 

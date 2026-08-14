@@ -99,6 +99,12 @@ export function printToken(token: CssToken): string {
         ? `var(${name}, ${printTokensInner(fallback)})`
         : `var(${name})`;
     }
+    case 'env': {
+      // Phase 15 — `env(safe-area-inset-*)` tokens. lightningcss stores the
+      // UA-defined name in `{ type:'ua', value:'safe-area-inset-left' }`.
+      const name = (value?.name as TokenRecord)?.value;
+      return `env(${String(name ?? '')})`;
+    }
     case 'color':
       return isColorValue(value) ? (colorToHex(value) ?? '<color>') : '<color>';
     case 'parenthesized':

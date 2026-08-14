@@ -78,7 +78,9 @@ export {
   getComponentMapping,
   registerComponent,
   styled,
+  useResolveClassNames,
   useWindforgeStyle,
+  withWindforge,
   type ClassPropMapping,
   type ComponentMappingRecord,
 } from './prop-mapping/index.js';
@@ -97,4 +99,13 @@ export {
   useScopedVariables,
   type VariableOverrides,
 } from './scoped.js';
-export { updateCSSVariables, useCSSVariable } from './variables.js';
+export { getCSSVariable, updateCSSVariables, useCSSVariable } from './variables.js';
+// Phase 15 — subtree layout-direction override.
+export {
+  LayoutDirection,
+  overrideDirection,
+  useLayoutDirection,
+  useLayoutDirectionOverride,
+  type LayoutDirectionProps,
+  type LayoutDirectionValue,
+} from './layout-direction.js';

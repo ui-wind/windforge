@@ -84,6 +84,8 @@ export type LowerContext = {
 export type LoweredDeclaration = {
   property: CanonicalProperty;
   value: IRValue;
+  /** Carried from the source `!important` flag (Phase 15). */
+  important?: boolean;
 };
 
 type ValueKind = 'dimension' | 'color' | 'keyword' | 'number';
@@ -101,6 +103,10 @@ const SIMPLE_PROPERTIES: Record<string, { target: CanonicalProperty; kind: Value
   right: { target: 'right', kind: 'dimension' },
   bottom: { target: 'bottom', kind: 'dimension' },
   left: { target: 'left', kind: 'dimension' },
+  // Logical insets lower to RN's direction-aware `start`/`end` (Phase 15 —
+  // safe-area utilities).
+  'inset-inline-start': { target: 'start', kind: 'dimension' },
+  'inset-inline-end': { target: 'end', kind: 'dimension' },
   'flex-basis': { target: 'flexBasis', kind: 'dimension' },
   'row-gap': { target: 'rowGap', kind: 'dimension' },
   'column-gap': { target: 'columnGap', kind: 'dimension' },
@@ -126,6 +132,14 @@ const SIMPLE_PROPERTIES: Record<string, { target: CanonicalProperty; kind: Value
   'border-right-color': { target: 'borderRightColor', kind: 'color' },
   'border-bottom-color': { target: 'borderBottomColor', kind: 'color' },
   'border-left-color': { target: 'borderLeftColor', kind: 'color' },
+  // Per-corner radii (Phase 15 — joined corner utilities like
+  // `rounded-tl-lg rounded-br-xl`). The shorthand form expands in the typed
+  // path; these mappings handle the individual CSS longhands that Tailwind
+  // emits when only some corners are set.
+  'border-top-left-radius': { target: 'borderTopLeftRadius', kind: 'dimension' },
+  'border-top-right-radius': { target: 'borderTopRightRadius', kind: 'dimension' },
+  'border-bottom-right-radius': { target: 'borderBottomRightRadius', kind: 'dimension' },
+  'border-bottom-left-radius': { target: 'borderBottomLeftRadius', kind: 'dimension' },
   // paint
   'background-color': { target: 'backgroundColor', kind: 'color' },
   color: { target: 'color', kind: 'color' },
@@ -335,6 +349,33 @@ function typedPercentage(value: AnyRecord): number | null {
   return typeof fraction === 'number' ? fraction * 100 : null;
 }
 
+/** `env(safe-area-inset-*)` name → physical inset edge (Phase 15). */
+const SAFE_AREA_INSETS: Record<string, 'top' | 'right' | 'bottom' | 'left'> = {
+  'safe-area-inset-top': 'top',
+  'safe-area-inset-right': 'right',
+  'safe-area-inset-bottom': 'bottom',
+  'safe-area-inset-left': 'left',
+};
+
+/**
+ * Lower a single `env(safe-area-inset-*)` value to a runtime `safe-area` IR
+ * value (Phase 15). Returns null for any other shape — env() names we do
+ * not know, fallback lists, or values mixed with other tokens fall through
+ * to the regular diagnostics.
+ */
+function safeAreaValueIR(tokens: CssToken[]): IRValue | null {
+  const significant = tokens.filter((t) => t.type !== 'white-space');
+  if (significant.length !== 1) return null;
+  const only = significant[0] as CssToken;
+  if (only.type !== 'env') return null;
+  const nameRecord = (only.value as AnyRecord | undefined)?.name as AnyRecord | undefined;
+  const name = nameRecord?.value;
+  if (typeof name !== 'string') return null;
+  const inset = SAFE_AREA_INSETS[name];
+  if (!inset) return null;
+  return { kind: 'safe-area', inset };
+}
+
 /** `calc(infinity * 1px)` (Tailwind's `rounded-full`) lowers to a px
  * dimension whose value is null; map it to a large finite radius. RN clips
  * the radius to the view's half-size, so any large number is visually
@@ -372,6 +413,72 @@ function lowerRadiusValue(corner: unknown, ctx: LowerContext, propertyLabel: str
   return typedDimensionIR(first as AnyRecord);
 }
 
+/**
+ * Lower a typed lightningcss math function (min/max/clamp) when every argument
+ * is a static length/percentage of a homogeneous unit. Returns null for mixed
+ * units (require runtime reference lengths not available at build time).
+ */
+function typedMathFunctionIR(value: AnyRecord): IRValue | null {
+  // Outer shape: {type:'length-percentage', value:{type:'calc', value:fn}}
+  const calc = value.value as AnyRecord | undefined;
+  if (calc?.type !== 'calc') return null;
+  const fn = calc.value as AnyRecord | undefined;
+  if (fn?.type !== 'function') return null;
+  const inner = fn.value as AnyRecord | undefined;
+  const name = inner?.type as string | undefined;
+  if (name !== 'min' && name !== 'max' && name !== 'clamp') return null;
+  if (!inner) return null;
+  const argList = inner.value as AnyRecord[] | undefined;
+  if (!Array.isArray(argList)) return null;
+
+  type ArgResult = { value: number; unit: 'px' | 'percent' };
+  const resolved: ArgResult[] = [];
+  for (const arg of argList) {
+    if (arg.type !== 'value') return null;
+    const lp = arg.value as AnyRecord | undefined;
+    if (!lp || typeof lp !== 'object') return null;
+    const percent = typedPercentage(lp);
+    if (percent !== null) {
+      resolved.push({ value: percent, unit: 'percent' });
+      continue;
+    }
+    const px = typedLengthPx(lp);
+    if (px !== null) {
+      resolved.push({ value: px, unit: 'px' });
+      continue;
+    }
+    return null;
+  }
+  if (resolved.length === 0) return null;
+
+  // All arguments must share the same unit family. Zero-valued entries with no
+  // unit are compatible with any dimensional unit per CSS spec.
+  let effectiveUnit: 'px' | 'percent' | 'none' = 'none';
+  for (const r of resolved) {
+    if (r.unit === 'percent' || r.unit === 'px') {
+      if (effectiveUnit === 'none') effectiveUnit = r.unit;
+      else if (r.unit !== effectiveUnit) return null;
+    }
+  }
+  // All-zero edge case.
+  if (effectiveUnit === 'none') effectiveUnit = 'px';
+
+  const numbers = resolved.map((r) => r.value);
+  let result: number;
+  if (name === 'min') result = Math.min(...numbers);
+  else if (name === 'max') result = Math.max(...numbers);
+  else {
+    // clamp(MIN, VAL, MAX) — three arguments required.
+    if (resolved.length !== 3) return null;
+    result = Math.min(Math.max(numbers[1]!, numbers[0]!), numbers[2]!);
+  }
+
+  if (effectiveUnit === 'percent') {
+    return { kind: 'dimension', value: roundPx(result), unit: 'percent' };
+  }
+  return { kind: 'number', value: roundPx(result) };
+}
+
 function typedDimensionIR(value: AnyRecord): IRValue | null {
   const percent = typedPercentage(value);
   if (percent !== null) {
@@ -379,6 +486,9 @@ function typedDimensionIR(value: AnyRecord): IRValue | null {
   }
   const px = typedLengthPx(value);
   if (px !== null) return { kind: 'number', value: roundPx(px) };
+  // Phase 15 — typed min()/max()/clamp() from lightningcss.
+  const math = typedMathFunctionIR(value);
+  if (math) return math;
   return null;
 }
 
@@ -457,6 +567,14 @@ function lowerUnparsed(
       message: `Cannot statically lower ${propertyLabel}: "${printTokens(tokens)}"`,
     });
     return null;
+  }
+
+  // Phase 15 — `env(safe-area-inset-*)` values are runtime-resolved on
+  // native; lower them to `safe-area` IR before numeric evaluation so they
+  // don't emit WF1002/WF1005. Only meaningful for dimension properties.
+  if (kind === 'dimension') {
+    const safeArea = safeAreaValueIR(substituted ?? tokens);
+    if (safeArea) return safeArea;
   }
 
   const resolved = resolveNumeric(tokens, vars, ctx.diagnostics);
@@ -984,7 +1102,11 @@ export function lowerRuleDeclarations(
         ? transformFromTokens(property, substituteVars(declaration.value as CssToken[], vars) ?? [])
         : transformFromTyped(property, declaration.value);
       if (value && value.operations.length > 0) {
-        out.push({ property: 'transform', value });
+        out.push({
+          property: 'transform',
+          value,
+          ...(declaration.important ? { important: true } : {}),
+        });
       } else if (!value) {
         diagnostics.push({
           code: 'WF1005',
@@ -996,6 +1118,7 @@ export function lowerRuleDeclarations(
     }
 
     for (const lowered of lowerDeclaration(declaration, vars, ctx)) {
+      if (declaration.important) lowered.important = true;
       out.push(lowered);
     }
   }

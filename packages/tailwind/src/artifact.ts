@@ -6,6 +6,8 @@
  * condition table the runtime evaluates.
  */
 import {
+  DEFAULT_DECLARATION_PRIORITY,
+  IMPORTANT_DECLARATION_PRIORITY,
   hashCanonical,
   type AnimationIR,
   type ConditionIR,
@@ -67,7 +69,9 @@ export type BuildResult = {
   diagnostics: Diagnostic[];
 };
 
-/** Merge declarations, later wins per property (CSS cascade within a rule). */
+/** Merge declarations, later wins per property (CSS cascade within a rule).
+ * An `!important` declaration is never overwritten by a later non-important
+ * one for the same property (Phase 15). */
 function mergeDeclarations(
   existing: DeclarationIR[],
   incoming: DeclarationIR[],
@@ -77,6 +81,15 @@ function mergeDeclarations(
     byProperty.set(declaration.property, declaration);
   }
   for (const declaration of incoming) {
+    const prior = byProperty.get(declaration.property);
+    // A prior important declaration survives a later non-important one.
+    if (
+      prior &&
+      (prior.priority ?? 0) >= IMPORTANT_DECLARATION_PRIORITY &&
+      (declaration.priority ?? 0) < IMPORTANT_DECLARATION_PRIORITY
+    ) {
+      continue;
+    }
     byProperty.set(declaration.property, declaration);
   }
   return [...byProperty.values()];
@@ -99,13 +112,19 @@ function mergeTransition(
 }
 
 function toDeclarationIRs(
-  lowered: Array<{ property: DeclarationIR['property']; value: DeclarationIR['value'] }>,
+  lowered: Array<{
+    property: DeclarationIR['property'];
+    value: DeclarationIR['value'];
+    important?: boolean;
+  }>,
 ): DeclarationIR[] {
   let order = 0;
   return lowered.map((declaration) => ({
     property: declaration.property,
     value: declaration.value,
-    priority: 10,
+    priority: declaration.important
+      ? IMPORTANT_DECLARATION_PRIORITY
+      : DEFAULT_DECLARATION_PRIORITY,
     sourceOrder: order++,
   }));
 }

@@ -10,6 +10,7 @@ import {
   __resetRuntimeDiagnostics,
   getRuntimeDiagnostics,
 } from '../src/diagnostics.js';
+import { __resetInsets, setInsets } from '../src/insets.js';
 import type { ConditionState } from '../src/state.js';
 import type { RuntimeArtifact } from '../src/types.js';
 
@@ -30,6 +31,16 @@ const artifact: RuntimeArtifact = {
   styles: {
     'p-4': {
       base: [{ property: 'padding', value: { kind: 'number', value: 16 }, sourceOrder: 0 }],
+    },
+    '!p-8': {
+      base: [
+        {
+          property: 'padding',
+          value: { kind: 'number', value: 32 },
+          priority: 20,
+          sourceOrder: 0,
+        },
+      ],
     },
     'w-1/2': {
       base: [
@@ -203,6 +214,26 @@ describe('resolution', () => {
     expect(resolveClassNames('p-4 sm:p-2', { ...light, windowWidth: 800 })).toEqual({
       padding: 8,
     });
+  });
+
+  it('splits class names on newlines, tabs, and mixed whitespace', () => {
+    // Phase 15 parity with Uniwind Pro 1.5.1 "Multiline class names" fix:
+    // templates and prettier-wrapped JSX often put one class per line.
+    expect(resolveClassNames('p-4\nbg-zinc-950', light)).toEqual({
+      padding: 16,
+      backgroundColor: '#09090b',
+    });
+    expect(resolveClassNames('  p-4\r\n\tbg-zinc-950 \n ', light)).toEqual({
+      padding: 16,
+      backgroundColor: '#09090b',
+    });
+  });
+
+  it('!important outranks a later ordinary utility for the same property', () => {
+    // Phase 15 parity with Uniwind Pro 1.1.3 "!important" support.
+    expect(resolveClassNames('!p-8 p-4', light)).toEqual({ padding: 32 });
+    // Order must not matter: the important declaration wins either way.
+    expect(resolveClassNames('p-4 !p-8', light)).toEqual({ padding: 32 });
   });
 
   it('ignores unknown classes', () => {
@@ -546,7 +577,129 @@ describe('toReactNativeValue', () => {
     expect(toReactNativeValue({ kind: 'token', ref: 'colors.primary' })).toBe('colors.primary');
   });
 
-  it('throws on unresolved variable references', () => {
-    expect(() => toReactNativeValue({ kind: 'variable', name: '--missing' })).toThrow();
+  it('throws on unresolved variable references (client)', () => {
+    // Outside SSR, unresolved variables must throw so misconfigurations surface.
+    const originalWindow = (globalThis as Record<string, unknown>).window;
+    (globalThis as Record<string, unknown>).window = {};
+    try {
+      expect(() => toReactNativeValue({ kind: 'variable', name: '--missing' })).toThrow();
+    } finally {
+      if (originalWindow === undefined) delete (globalThis as Record<string, unknown>).window;
+      else (globalThis as Record<string, unknown>).window = originalWindow;
+    }
+  });
+
+  it('returns undefined for unresolved variables during SSR', () => {
+    // Phase 15 parity with Uniwind Pro 1.2.0 — SSR has no runtime environment
+    // and artifacts may not yet be registered; fail silently rather than
+    // crashing the render pass. In vitest's node env, window is undefined by
+    // default, so this exercises the SSR branch directly.
+    expect(toReactNativeValue({ kind: 'variable', name: '--missing-ssr' })).toBeUndefined();
+  });
+});
+
+describe('safe area insets (Phase 15)', () => {
+  beforeEach(() => {
+    __resetRegistry();
+    __clearStyleCache();
+    __resetRuntimeDiagnostics();
+    __resetInsets();
+  });
+
+  const safeAreaArtifact: RuntimeArtifact = {
+    version: 1,
+    irVersion: 1,
+    hash: 'safe',
+    styles: {
+      'ps-safe': {
+        base: [
+          {
+            property: 'paddingInlineStart',
+            value: { kind: 'safe-area', inset: 'left' },
+            sourceOrder: 0,
+          },
+        ],
+        variants: [
+          {
+            conditionIds: ['layout-direction:rtl'],
+            declarations: [
+              {
+                property: 'paddingInlineStart',
+                value: { kind: 'safe-area', inset: 'right' },
+                sourceOrder: 0,
+              },
+            ],
+          },
+        ],
+      },
+      'pe-safe': {
+        base: [
+          {
+            property: 'paddingInlineEnd',
+            value: { kind: 'safe-area', inset: 'right' },
+            sourceOrder: 0,
+          },
+        ],
+        variants: [
+          {
+            conditionIds: ['layout-direction:rtl'],
+            declarations: [
+              {
+                property: 'paddingInlineEnd',
+                value: { kind: 'safe-area', inset: 'left' },
+                sourceOrder: 0,
+              },
+            ],
+          },
+        ],
+      },
+    },
+    conditions: [{ kind: 'layout-direction', id: 'layout-direction:rtl', direction: 'rtl' }],
+  };
+
+  it('resolves safe-area values against the current insets store', () => {
+    registerArtifact(safeAreaArtifact);
+    setInsets({ top: 44, right: 12, bottom: 34, left: 8 });
+    expect(resolveClassNames('ps-safe', light)).toEqual({ paddingInlineStart: 8 });
+    expect(resolveClassNames('pe-safe', light)).toEqual({ paddingInlineEnd: 12 });
+  });
+
+  it('falls back to 0 when no insets are published', () => {
+    registerArtifact(safeAreaArtifact);
+    // No setInsets call — store is null.
+    expect(resolveClassNames('ps-safe', light)).toEqual({ paddingInlineStart: 0 });
+  });
+
+  it('applies RTL variant using the mirrored physical inset', () => {
+    registerArtifact(safeAreaArtifact);
+    setInsets({ top: 44, right: 12, bottom: 34, left: 8 });
+    const rtl: ConditionState = { ...light, layoutDirection: 'rtl' };
+    // ps-safe in RTL → paddingInlineStart uses the RIGHT physical inset.
+    expect(resolveClassNames('ps-safe', rtl)).toEqual({ paddingInlineStart: 12 });
+    // pe-safe in RTL → paddingInlineEnd uses the LEFT physical inset.
+    expect(resolveClassNames('pe-safe', rtl)).toEqual({ paddingInlineEnd: 8 });
+  });
+
+  it('invalidates cached results when insets change (registry bump)', () => {
+    registerArtifact(safeAreaArtifact);
+    setInsets({ top: 44, right: 12, bottom: 34, left: 8 });
+    const first = resolveClassNames('ps-safe', light);
+    expect(first).toEqual({ paddingInlineStart: 8 });
+    // Re-publish different insets — registry version bumps, cache invalidates
+    // without explicit __clearStyleCache().
+    setInsets({ top: 44, right: 20, bottom: 34, left: 5 });
+    const second = resolveClassNames('ps-safe', light);
+    expect(second).not.toBe(first);
+    expect(second).toEqual({ paddingInlineStart: 5 });
+  });
+
+  it('no-ops when insets are re-published with the same values', () => {
+    registerArtifact(safeAreaArtifact);
+    setInsets({ top: 44, right: 12, bottom: 34, left: 8 });
+    const first = resolveClassNames('ps-safe', light);
+    // Same insets again should not bump the registry; same cache hit.
+    setInsets({ top: 44, right: 12, bottom: 34, left: 8 });
+    const second = resolveClassNames('ps-safe', light);
+    expect(second).toBe(first);
   });
 });

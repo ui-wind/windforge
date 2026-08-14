@@ -102,6 +102,18 @@ export type RuntimeValueIR = {
   ref: string;
 };
 
+/** A physical safe-area inset edge, lowered from `env(safe-area-inset-*)`
+ * (Phase 15). Backends resolve it at runtime against the platform safe-area
+ * insets (native) or emit the `env()` function unchanged (web). Logical
+ * start/end behavior is expressed with `layout-direction` variants around
+ * physical edges, not as a logical value here. */
+export type SafeAreaInsetEdge = 'top' | 'right' | 'bottom' | 'left';
+
+export type SafeAreaValueIR = {
+  kind: 'safe-area';
+  inset: SafeAreaInsetEdge;
+};
+
 export type IRValue =
   | NumberValueIR
   | StringValueIR
@@ -113,7 +125,8 @@ export type IRValue =
   | ListValueIR
   | TransformValueIR
   | ConditionalValueIR
-  | RuntimeValueIR;
+  | RuntimeValueIR
+  | SafeAreaValueIR;
 
 /**
  * Compiler classification of a value, per the IR spec. Static values must be
@@ -150,6 +163,7 @@ export function classifyValue(value: IRValue): ValueClassification {
     case 'conditional':
       return 'CONDITIONAL';
     case 'runtime':
+    case 'safe-area':
       return 'RUNTIME';
     case 'list': {
       let max: ValueClassification = 'STATIC';

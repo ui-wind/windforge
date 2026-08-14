@@ -40,6 +40,8 @@ import {
 } from '../src/prop-mapping/registry.js';
 import { styled } from '../src/prop-mapping/styled.js';
 import { useWindforgeStyle } from '../src/prop-mapping/useWindforgeStyle.js';
+import { withWindforge } from '../src/prop-mapping/withWindforge.js';
+import { useResolveClassNames } from '../src/prop-mapping/useResolveClassNames.js';
 import { __resetRegistry, registerArtifact } from '../src/registry.js';
 import { __clearStyleCache } from '../src/resolve.js';
 import type { RuntimeArtifact } from '../src/types.js';
@@ -206,5 +208,59 @@ describe('useWindforgeStyle', () => {
       );
     });
     expect(seen.at(-1)).toEqual({ color: '#ffffff' });
+  });
+});
+
+describe('withWindforge (HOC alias of styled)', () => {
+  beforeEach(() => {
+    __resetRegistry();
+    __clearStyleCache();
+    __resetBackend();
+    __resetComponentRegistry();
+    registerArtifact(artifact);
+  });
+
+  it('resolves className → style exactly like styled()', () => {
+    const Wrapped = withWindforge(CustomHost);
+    let renderer!: ReturnType<typeof create>;
+    act(() => {
+      renderer = create(createElement(Wrapped, { className: 'p-4 gap-2' }));
+    });
+    const host = renderer.root.findByType('CustomHost' as never);
+    expect(host.props.style).toEqual({ padding: 16, gap: 8 });
+    expect(host.props.className).toBeUndefined();
+  });
+
+  it('accepts explicit prop mappings like styled()', () => {
+    const Wrapped = withWindforge(CustomHost, [
+      { classNameProp: 'cardClassName', styleProp: 'cardStyle' },
+    ]);
+    let renderer!: ReturnType<typeof create>;
+    act(() => {
+      renderer = create(createElement(Wrapped, { cardClassName: 'gap-2' }));
+    });
+    const host = renderer.root.findByType('CustomHost' as never);
+    expect(host.props.cardStyle).toEqual({ gap: 8 });
+  });
+});
+
+describe('useResolveClassNames (alias of useWindforgeStyle)', () => {
+  beforeEach(() => {
+    __resetRegistry();
+    __clearStyleCache();
+    __resetBackend();
+    registerArtifact(artifact);
+  });
+
+  it('resolves a className string to a style object', () => {
+    const seen: unknown[] = [];
+    function Consumer() {
+      seen.push(useResolveClassNames('p-4 gap-2'));
+      return null;
+    }
+    act(() => {
+      create(createElement(Consumer));
+    });
+    expect(seen[0]).toEqual({ padding: 16, gap: 8 });
   });
 });

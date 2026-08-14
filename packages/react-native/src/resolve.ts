@@ -8,7 +8,7 @@
  * the active theme's variable table (artifact.themes) plus any runtime
  * overrides (scoped variables / global overrides).
  */
-import { parseStaticUtility } from '@windforge/ir';
+import { isImportantDeclaration, parseStaticUtility } from '@windforge/ir';
 import type {
   AnimationIR,
   DeclarationIR,
@@ -24,6 +24,7 @@ import {
   recordFallbackParse,
   recordResolve,
 } from './diagnostics.js';
+import { getInsets } from './insets.js';
 import { getArtifacts, registryVersion } from './registry.js';
 import {
   componentStateSignature,
@@ -73,17 +74,24 @@ function resolveVariable(
   if (globalVal !== undefined) return globalVal;
 
   // 3. Artifact theme table — per-theme override first, then base @theme
-  //    values stored under the "default" key by the compiler.
+  //    values stored under the "default" key by the compiler. A theme that
+  //    exists but omits a variable falls back to the SAME artifact's
+  //    default table (Phase 15 — deeply themed variables traverse both).
   const artifacts = getArtifacts();
   for (let i = artifacts.length - 1; i >= 0; i--) {
     const artifact = artifacts[i];
     if (!artifact) continue;
-    // Per-theme override takes precedence over the base default.
-    const entries = artifact.themes?.[ctx.theme] ?? artifact.themes?.['default'];
-    if (!entries) continue;
-    const entry = entries.find((e) => e.name === varName);
+    const themes = artifact.themes;
+    if (!themes) continue;
+    const entry = themes[ctx.theme]?.find((e) => e.name === varName);
     if (entry) {
       return tokensToValue(entry.tokens, ctx, depth);
+    }
+    if (ctx.theme !== 'default') {
+      const fallback = themes['default']?.find((e) => e.name === varName);
+      if (fallback) {
+        return tokensToValue(fallback.tokens, ctx, depth);
+      }
     }
   }
   return undefined;
@@ -158,19 +166,33 @@ export function toReactNativeValue(value: IRValue, ctx?: ResolutionContext): unk
         const resolved = resolveVariable(varName, ctx, 0);
         if (resolved !== undefined) return resolved;
       }
-      // No fallback in the IR type; unresolved variables throw.
+      // Phase 15 — during SSR there is no runtime environment and artifacts
+      // may not yet be registered; fail silently rather than crashing the
+      // render pass (parity with Uniwind Pro 1.2.0 silent-variable-SSR fix).
+      // Outside SSR we still throw so misconfigurations surface immediately.
+      if (typeof (globalThis as Record<string, unknown>).window === 'undefined') return undefined;
       throw new Error(
         `@windforge/react-native: unresolved variable ${varName ?? '(unknown)'}`,
       );
     }
     case 'calc':
-    case 'runtime':
+    case 'runtime': {
       // The MVP contract lowers these at build time. If one survives, the
-      // compiler and runtime versions disagree — fail loudly.
+      // compiler and runtime versions disagree — fail loudly outside SSR.
+      if (typeof (globalThis as Record<string, unknown>).window === 'undefined') return undefined;
       throw new Error(
         `@windforge/react-native: unresolved ${value.kind} value reached the runtime; ` +
           'rebuild styles with a matching @windforge/tailwind',
       );
+    }
+    case 'safe-area': {
+      // Phase 15 — resolved against the platform insets store at render
+      // time. Before WindforgeSafeAreaProvider publishes, fall back to 0
+      // (same as CSS `env()` without browser support). Cache invalidation
+      // is driven by setInsets bumping the registry version.
+      const current = getInsets();
+      return current ? current[value.inset] : 0;
+    }
     case 'conditional':
       throw new Error(
         '@windforge/react-native: conditional values must be expanded at build time',
@@ -190,17 +212,50 @@ function toTransformObject(operation: TransformOperationIR, ctx?: ResolutionCont
   return { [operation.operation]: toReactNativeValue(operation.value, ctx) };
 }
 
-function declarationsToStyle(declarations: DeclarationIR[], ctx?: ResolutionContext): ReactNativeStyle {
+/** A style object plus the set of properties set by `!important` declarations. */
+type TierStyle = { style: ReactNativeStyle; important: Set<string> };
+
+/**
+ * Lower a declaration list to a style object, tracking which properties were
+ * set by `!important` declarations (Phase 15). Within one tier an earlier
+ * important value survives a later non-important one; otherwise source order
+ * (later wins) applies, as before.
+ */
+function declarationsToTier(declarations: DeclarationIR[], ctx?: ResolutionContext): TierStyle {
   const style: ReactNativeStyle = {};
-  // sourceOrder ascending preserves author order; priority descending would
-  // win across documents, but within one artifact sourceOrder suffices.
+  const important = new Set<string>();
+  // sourceOrder ascending preserves author order for equal-priority values.
   const sorted = [...declarations].sort(
     (a, b) => (a.sourceOrder ?? 0) - (b.sourceOrder ?? 0),
   );
   for (const declaration of sorted) {
+    const isImportant = isImportantDeclaration(declaration);
+    if (important.has(declaration.property) && !isImportant) continue;
     style[declaration.property] = toReactNativeValue(declaration.value, ctx);
+    if (isImportant) important.add(declaration.property);
+    else important.delete(declaration.property);
   }
-  return style;
+  return { style, important };
+}
+
+/**
+ * Merge `source` into `target` honoring importance: an already-important
+ * property is never overwritten by a non-important value. With no important
+ * declarations on either side this reduces to plain later-wins assignment.
+ */
+function mergeTierStyle(
+  target: ReactNativeStyle,
+  targetImportant: Set<string>,
+  source: ReactNativeStyle,
+  sourceImportant?: ReadonlySet<string>,
+): void {
+  for (const property of Object.keys(source)) {
+    const incomingImportant = sourceImportant?.has(property) === true;
+    if (targetImportant.has(property) && !incomingImportant) continue;
+    target[property] = source[property];
+    if (incomingImportant) targetImportant.add(property);
+    else targetImportant.delete(property);
+  }
 }
 
 /** Look up a class across artifacts; later registrations win. */
@@ -227,6 +282,14 @@ function findClassEntry(className: string): { entry: ClassEntry; artifact: Runti
 export type ResolvedTiers = {
   base: ReactNativeStyle;
   variant: ReactNativeStyle;
+  /**
+   * Properties in `base`/`variant` that came from `!important` declarations
+   * (Phase 15). Present only when at least one important declaration exists;
+   * an important value outranks a non-important one for the same property
+   * regardless of token order or tier.
+   */
+  importantBase?: ReadonlySet<string>;
+  importantVariant?: ReadonlySet<string>;
 };
 
 /**
@@ -275,21 +338,30 @@ export function resolveClassNameTiers(
         ? { ...state, theme: themeCtx.theme }
         : state;
     const variant: ReactNativeStyle = {};
+    const variantImportant = new Set<string>();
     for (const rule of entry.variants ?? []) {
       const active = rule.conditionIds.every((id) => {
         const condition = artifact.conditions.find((c) => c.id === id);
         return condition ? evaluateCondition(condition, evalState, componentState) : false;
       });
-      if (active) Object.assign(variant, declarationsToStyle(rule.declarations, themeCtx));
+      if (active) {
+        const tier = declarationsToTier(rule.declarations, themeCtx);
+        mergeTierStyle(variant, variantImportant, tier.style, tier.important);
+      }
     }
-    tiers = { base: declarationsToStyle(entry.base, themeCtx), variant };
+    const baseTier = declarationsToTier(entry.base, themeCtx);
+    tiers = { base: baseTier.style, variant };
+    if (baseTier.important.size > 0) tiers.importantBase = baseTier.important;
+    if (variantImportant.size > 0) tiers.importantVariant = variantImportant;
   } else {
     // Build-time tables first; the fallback only covers a controlled subset
     // of static utilities and never replaces the artifact path.
     const declarations = parseStaticUtility(className);
     if (declarations) {
       recordFallbackParse();
-      tiers = { base: declarationsToStyle(declarations, themeCtx), variant: {} };
+      const baseTier = declarationsToTier(declarations, themeCtx);
+      tiers = { base: baseTier.style, variant: {} };
+      if (baseTier.important.size > 0) tiers.importantBase = baseTier.important;
     } else {
       recordFallbackMiss(className);
     }
@@ -315,7 +387,11 @@ export function resolveClassName(
   themeCtx?: ResolutionContext,
 ): ReactNativeStyle | null {
   const tiers = resolveClassNameTiers(className, state, componentState, themeCtx);
-  return tiers ? { ...tiers.base, ...tiers.variant } : null;
+  if (!tiers) return null;
+  const merged: ReactNativeStyle = { ...tiers.base };
+  const important = new Set(tiers.importantBase);
+  mergeTierStyle(merged, important, tiers.variant, tiers.importantVariant);
+  return merged;
 }
 
 /** Compact signature of the scoped-variable dimension for cache keys. */
@@ -379,14 +455,16 @@ export function resolveClassNames(
   if (composed) return composed;
 
   const merged: ReactNativeStyle = {};
+  const mergedImportant = new Set<string>();
   const variantOverlay: ReactNativeStyle = {};
+  const variantImportant = new Set<string>();
   for (const name of tokens) {
     const tiers = resolveClassNameTiers(name, state, componentState, themeCtx);
     if (!tiers) continue;
-    Object.assign(merged, tiers.base);
-    Object.assign(variantOverlay, tiers.variant);
+    mergeTierStyle(merged, mergedImportant, tiers.base, tiers.importantBase);
+    mergeTierStyle(variantOverlay, variantImportant, tiers.variant, tiers.importantVariant);
   }
-  Object.assign(merged, variantOverlay);
+  mergeTierStyle(merged, mergedImportant, variantOverlay, variantImportant);
   composedCache.set(signature, merged);
   if (composedCache.size > STYLE_CACHE_LIMIT) composedCache.clear();
   return merged;

@@ -17,6 +17,10 @@
 import { useMemo } from 'react';
 import { getBackend } from '../backends/index.js';
 import { useGroupStates } from '../group.js';
+import {
+  overrideDirection,
+  useLayoutDirectionOverride,
+} from '../layout-direction.js';
 import { useConditionState } from '../provider.js';
 import type { ReactNativeStyle } from '../resolve.js';
 import type { ComponentState } from '../state.js';
@@ -28,7 +32,9 @@ export function useWindforgeStyle(
   componentState?: ComponentState,
 ): ReactNativeStyle {
   const backend = getBackend();
-  const state = useConditionState(true);
+  const globalState = useConditionState(true);
+  const directionOverride = useLayoutDirectionOverride();
+  const state = overrideDirection(globalState, directionOverride);
   const groupStates = useGroupStates();
   return useMemo(() => {
     if (!className) return EMPTY_STYLE;

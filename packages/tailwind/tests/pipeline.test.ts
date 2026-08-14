@@ -229,6 +229,256 @@ describe('buildArtifact (direct CSS input)', () => {
   });
 });
 
+describe('!important declarations (Phase 15)', () => {
+  it('tags important declarations with the important priority', () => {
+    const css = `
+      .card { padding: 4px !important; }
+      .plain { padding: 4px; }
+    `;
+    const { artifact } = buildArtifact(css, 1);
+    expect(artifact.styles['card'].base).toEqual([
+      {
+        property: 'padding',
+        value: { kind: 'number', value: 4 },
+        priority: 20,
+        sourceOrder: 0,
+      },
+    ]);
+    expect(artifact.styles['plain'].base[0]?.priority).toBe(10);
+  });
+
+  it('keeps an important declaration over a later non-important one', () => {
+    const css = `
+      .card {
+        padding: 4px !important;
+        padding: 8px;
+      }
+    `;
+    const { artifact } = buildArtifact(css, 1);
+    // The important 4px survives the later ordinary 8px. (It lowers after the
+    // ordinary declarations, so its sourceOrder is 1.)
+    expect(artifact.styles['card'].base).toEqual([
+      {
+        property: 'padding',
+        value: { kind: 'number', value: 4 },
+        priority: 20,
+        sourceOrder: 1,
+      },
+    ]);
+  });
+
+  it('lowers the Tailwind ! modifier end-to-end', async () => {
+    const { artifact } = await buildUtilities(['!p-4', 'p-4']);
+    const important = artifact.styles['!p-4'];
+    const ordinary = artifact.styles['p-4'];
+    expect(important).toBeDefined();
+    expect(ordinary).toBeDefined();
+    expect(findProperty(important.base, 'padding')?.priority).toBe(20);
+    expect(findProperty(ordinary.base, 'padding')?.priority).toBe(10);
+  });
+});
+
+describe('safe area RTL utilities (Phase 15)', () => {
+  it('lowers ps-safe/pe-safe/ms-safe/me-safe with layout-direction variants', async () => {
+    const { artifact, diagnostics } = await buildUtilities([
+      'ps-safe',
+      'pe-safe',
+      'ms-safe',
+      'me-safe',
+    ]);
+    // No WF1005 / WF1003 — built-in CSS compiles cleanly through env() lowering.
+    expect(diagnostics.filter((d) => d.code !== 'WF1004')).toEqual([]);
+
+    const psBase = findProperty(artifact.styles['ps-safe']?.base ?? [], 'paddingInlineStart');
+    expect(psBase?.value).toEqual({ kind: 'safe-area', inset: 'left' });
+    const peBase = findProperty(artifact.styles['pe-safe']?.base ?? [], 'paddingInlineEnd');
+    expect(peBase?.value).toEqual({ kind: 'safe-area', inset: 'right' });
+    const msBase = findProperty(artifact.styles['ms-safe']?.base ?? [], 'marginInlineStart');
+    expect(msBase?.value).toEqual({ kind: 'safe-area', inset: 'left' });
+    const meBase = findProperty(artifact.styles['me-safe']?.base ?? [], 'marginInlineEnd');
+    expect(meBase?.value).toEqual({ kind: 'safe-area', inset: 'right' });
+
+    // Each utility carries one RTL variant swapping to the mirrored physical edge.
+    for (const name of ['ps-safe', 'pe-safe', 'ms-safe', 'me-safe']) {
+      const entry = artifact.styles[name];
+      expect(entry.variants).toHaveLength(1);
+      expect(entry.variants![0]!.conditionIds).toEqual(['layout-direction:rtl']);
+    }
+    expect(findProperty(artifact.styles['ps-safe'].variants![0]!.declarations, 'paddingInlineStart')?.value).toEqual({
+      kind: 'safe-area',
+      inset: 'right',
+    });
+    expect(findProperty(artifact.styles['pe-safe'].variants![0]!.declarations, 'paddingInlineEnd')?.value).toEqual({
+      kind: 'safe-area',
+      inset: 'left',
+    });
+
+    // The condition table registers the RTL direction once across all four.
+    expect(
+      artifact.conditions.some(
+        (c) => c.kind === 'layout-direction' && c.id === 'layout-direction:rtl',
+      ),
+    ).toBe(true);
+  });
+
+  it('lowers start-safe/end-safe positioning utilities', async () => {
+    const { artifact, diagnostics } = await buildUtilities(['start-safe', 'end-safe']);
+    expect(diagnostics.filter((d) => d.code !== 'WF1004')).toEqual([]);
+    expect(findProperty(artifact.styles['start-safe']?.base ?? [], 'start')?.value).toEqual({
+      kind: 'safe-area',
+      inset: 'left',
+    });
+    expect(findProperty(artifact.styles['end-safe']?.base ?? [], 'end')?.value).toEqual({
+      kind: 'safe-area',
+      inset: 'right',
+    });
+    expect(findProperty(artifact.styles['start-safe'].variants![0]!.declarations, 'start')?.value).toEqual({
+      kind: 'safe-area',
+      inset: 'right',
+    });
+    expect(findProperty(artifact.styles['end-safe'].variants![0]!.declarations, 'end')?.value).toEqual({
+      kind: 'safe-area',
+      inset: 'left',
+    });
+  });
+
+  it('records layout-direction conditions in dependencies', async () => {
+    const { artifact } = await buildUtilities(['ps-safe']);
+    expect(artifact.dependencies['ps-safe']).toEqual(['layout-direction:rtl']);
+  });
+});
+
+describe('Phase 15 bug-fix verifications', () => {
+  it('lowers flex-1 shorthand into grow/shrink/basis longhands', async () => {
+    const { artifact, diagnostics } = await buildUtilities(['flex-1']);
+    expect(diagnostics.filter((d) => d.code !== 'WF1004')).toEqual([]);
+    const base = artifact.styles['flex-1'].base;
+    // Phase 15 parity with Uniwind Pro 1.2.0 — flex:1 was previously parsed
+    // into separated properties; now expands cleanly per the CSS spec
+    // (flex:1 → 1 1 0%).
+    expect(base).toEqual([
+      { property: 'flexGrow', value: { kind: 'number', value: 1 }, priority: 10, sourceOrder: 0 },
+      { property: 'flexShrink', value: { kind: 'number', value: 1 }, priority: 10, sourceOrder: 1 },
+      {
+        property: 'flexBasis',
+        value: { kind: 'dimension', value: 0, unit: 'percent' },
+        priority: 10,
+        sourceOrder: 2,
+      },
+    ]);
+  });
+
+  it('applies joined border-radius corners independently', async () => {
+    // Phase 15 parity with Uniwind Pro 1.1.1 — combined corner utilities
+    // like `rounded-tl-lg rounded-br-xl` must apply each corner separately
+    // without WF1003 diagnostics.
+    const { artifact, diagnostics } = await buildUtilities([
+      'rounded-tl-lg',
+      'rounded-br-xl',
+    ]);
+    expect(diagnostics.filter((d) => d.code !== 'WF1004')).toEqual([]);
+    expect(findProperty(artifact.styles['rounded-tl-lg']?.base ?? [], 'borderTopLeftRadius')?.value).toEqual({
+      kind: 'number',
+      value: 8,
+    });
+    expect(findProperty(artifact.styles['rounded-br-xl']?.base ?? [], 'borderBottomRightRadius')?.value).toEqual({
+      kind: 'number',
+      value: 12,
+    });
+  });
+
+  it('documents line-clamp as unsupported on native (no style equivalent)', async () => {
+    // Phase 15 note: Uniwind Pro 1.1.2 "line-clamp-* classes not working" fix
+    // targets their proprietary native renderer. React Native has no
+    // `-webkit-line-clamp` style property; text truncation uses the
+    // `numberOfLines` prop on `<Text>` instead. Until a dedicated backend
+    // mapping ships, these utilities produce no style output.
+    const { artifact, diagnostics } = await buildUtilities(['line-clamp-3']);
+    expect(artifact.styles['line-clamp-3']).toBeUndefined();
+    // overflow:hidden is lowered fine; display:-webkit-box and
+    // -webkit-line-clamp have no RN equivalents and emit WF1003/WF1005.
+    const codes = diagnostics.map((d) => d.code);
+    expect(codes).toContain('WF1003');
+    expect(codes).toContain('WF1005');
+  });
+});
+
+describe('min()/max()/clamp() CSS functions (Phase 15)', () => {
+  // Parity with Uniwind Pro 1.5.0 "Added support for the min() CSS function".
+  // Windforge evaluates these statically at build time: all arguments must
+  // resolve to the same unit family (all px, or all percent). Mixed units
+  // require runtime reference lengths the compiler doesn't have → diagnostic.
+
+  it('evaluates min() with homogeneous px arguments', async () => {
+    const { artifact, diagnostics } = await buildUtilities(['w-[min(4rem,100px)]']);
+    expect(diagnostics).toEqual([]);
+    // 4rem = 64px < 100px → 64.
+    expect(findProperty(artifact.styles['w-[min(4rem,100px)]']?.base ?? [], 'width')?.value).toEqual({
+      kind: 'number',
+      value: 64,
+    });
+  });
+
+  it('evaluates max() with homogeneous px arguments', async () => {
+    const { artifact, diagnostics } = await buildUtilities(['w-[max(4rem,100px)]']);
+    expect(diagnostics).toEqual([]);
+    // 4rem = 64px < 100px → max picks 100.
+    expect(findProperty(artifact.styles['w-[max(4rem,100px)]']?.base ?? [], 'width')?.value).toEqual({
+      kind: 'number',
+      value: 100,
+    });
+  });
+
+  it('evaluates min()/max() with homogeneous percent arguments', async () => {
+    const { artifact, diagnostics } = await buildUtilities([
+      'w-[min(50%,25%)]',
+      'w-[max(50%,25%)]',
+    ]);
+    expect(diagnostics).toEqual([]);
+    expect(findProperty(artifact.styles['w-[min(50%,25%)]']?.base ?? [], 'width')?.value).toEqual({
+      kind: 'dimension',
+      value: 25,
+      unit: 'percent',
+    });
+    expect(findProperty(artifact.styles['w-[max(50%,25%)]']?.base ?? [], 'width')?.value).toEqual({
+      kind: 'dimension',
+      value: 50,
+      unit: 'percent',
+    });
+  });
+
+  it('evaluates clamp(MIN, VAL, MAX)', async () => {
+    const { artifact, diagnostics } = await buildUtilities(['w-[clamp(2rem,5rem,4rem)]']);
+    expect(diagnostics).toEqual([]);
+    // clamp(32px, 80px, 64px) → max(32, min(80, 64)) = 64.
+    expect(findProperty(artifact.styles['w-[clamp(2rem,5rem,4rem)]']?.base ?? [], 'width')?.value).toEqual({
+      kind: 'number',
+      value: 64,
+    });
+  });
+
+  it('rejects mixed px/percent arguments with a diagnostic', async () => {
+    // min(100px, 50%) cannot be resolved without a runtime reference length;
+    // this is documented as a build-time limitation. The typed path emits
+    // WF1005 (cannot statically lower); unparsed paths would emit WF1002.
+    const { artifact, diagnostics } = await buildUtilities(['w-[min(100px,50%)]']);
+    expect(artifact.styles['w-[min(100px,50%)]']).toBeUndefined();
+    const codes = diagnostics.map((d) => d.code);
+    expect(codes.some((c) => c === 'WF1002' || c === 'WF1005')).toBe(true);
+  });
+
+  it('works inside box shorthands via the typed path', async () => {
+    // padding-* sides also lower through typedDimensionIR, so min()/max()
+    // apply to every dimension property, not just width/height.
+    const { artifact, diagnostics } = await buildUtilities(['pt-[max(1rem,24px)]']);
+    expect(diagnostics).toEqual([]);
+    expect(findProperty(artifact.styles['pt-[max(1rem,24px)]']?.base ?? [], 'paddingTop')?.value).toEqual({
+      kind: 'number',
+      value: 24,
+    });
+  });
+});
+
 async function buildUtilities(candidates: string[]) {
   const { css } = await compileTailwindCss(ENTRY, new Set(candidates));
   return buildArtifact(css, 1);

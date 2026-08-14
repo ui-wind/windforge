@@ -25,6 +25,8 @@ export type {
   TransformOperationIR,
   ConditionalValueIR,
   RuntimeValueIR,
+  SafeAreaValueIR,
+  SafeAreaInsetEdge,
   ValueClassification,
   DimensionUnit,
 } from './values.js';
@@ -60,7 +62,12 @@ export type {
   TokenIR,
   SourceMetadata,
 } from './ir.js';
-export { emptyIR } from './ir.js';
+export {
+  emptyIR,
+  DEFAULT_DECLARATION_PRIORITY,
+  IMPORTANT_DECLARATION_PRIORITY,
+  isImportantDeclaration,
+} from './ir.js';
 export type { CanonicalOptions } from './canonical.js';
 export { toCanonicalJson, toCanonicalString } from './canonical.js';
 export { hashIR, hashCanonical } from './hash.js';

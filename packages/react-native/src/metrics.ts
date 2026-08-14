@@ -7,53 +7,25 @@
  * separate store because they are read-only metrics, not variant drivers,
  * and observing them requires an app to mount the optional safe-area
  * bridge (`@windforge/react-native/safe-area`).
+ *
+ * The insets store itself lives in `insets.ts` (dependency-free) so the
+ * pure resolution layer can read it without pulling React in.
  */
 import { useSyncExternalStore } from 'react';
+import { getInsets, subscribeInsets, type SafeAreaInsets } from './insets.js';
 import { getConditions, subscribeConditions } from './provider.js';
 import type { ConditionState } from './state.js';
 
-export type SafeAreaInsets = {
-  top: number;
-  right: number;
-  bottom: number;
-  left: number;
-};
+export {
+  __resetInsets,
+  getInsets,
+  setInsets,
+  subscribeInsets,
+  type SafeAreaInsets,
+} from './insets.js';
 
 /** Condition state plus the safe area insets, when observed. */
 export type WindforgeMetrics = ConditionState & { insets: SafeAreaInsets | null };
-
-let insets: SafeAreaInsets | null = null;
-const insetsSubscribers = new Set<() => void>();
-
-export function getInsets(): SafeAreaInsets | null {
-  return insets;
-}
-
-export function subscribeInsets(listener: () => void): () => void {
-  insetsSubscribers.add(listener);
-  return () => {
-    insetsSubscribers.delete(listener);
-  };
-}
-
-/**
- * Publish new safe area insets. Internal — called by the safe-area bridge
- * (`WindforgeSafeAreaProvider`); noop when nothing changed.
- */
-export function setInsets(next: SafeAreaInsets | null): void {
-  if (
-    insets !== null &&
-    next !== null &&
-    insets.top === next.top &&
-    insets.right === next.right &&
-    insets.bottom === next.bottom &&
-    insets.left === next.left
-  ) {
-    return;
-  }
-  insets = next;
-  for (const listener of [...insetsSubscribers]) listener();
-}
 
 /**
  * All observable platform metrics in one snapshot. The result is memoized:
@@ -101,10 +73,4 @@ export function useInsets(subscribe = true): SafeAreaInsets | null {
     getInsets,
     getInsets,
   );
-}
-
-/** Test-only reset of the insets store. */
-export function __resetInsets(): void {
-  insets = null;
-  insetsSubscribers.clear();
 }
