@@ -8,6 +8,7 @@ vi.mock('react-native', () => ({
 import { __resetBackend, getBackend, selectBackend, setBackend } from '../src/backends/index.js';
 import { createFabricBackend, setFabricNativeAdapter, type NativeStyleAdapter } from '../src/backends/fabric.js';
 import { createJsBaselineBackend } from '../src/backends/js-baseline.js';
+import { createWebCssBackend } from '../src/backends/css.js';
 import { __resetRegistry, registerArtifact } from '../src/registry.js';
 import * as resolveModule from '../src/resolve.js';
 import { __clearStyleCache, resolveClassNames } from '../src/resolve.js';
@@ -375,5 +376,50 @@ describe('fabric backend', () => {
       });
       resolveSpy.mockRestore();
     });
+  });
+});
+
+describe('web-css backend', () => {
+  beforeEach(() => {
+    __resetBackend();
+  });
+
+  it('selects via selectBackend("web-css")', () => {
+    const backend = selectBackend('web-css');
+    expect(backend.name).toBe('web-css');
+    expect(getBackend()).toBe(backend);
+  });
+
+  it('requires context for theme scoping re-renders', () => {
+    const backend = createWebCssBackend();
+    expect(backend.requiresContext()).toBe(true);
+  });
+
+  it('returns className passthrough (no IR resolution)', () => {
+    const backend = createWebCssBackend();
+    expect(backend.resolveStyle('p-4 bg-accent hover:bg-red-500', light)).toEqual({
+      className: 'p-4 bg-accent hover:bg-red-500',
+    });
+  });
+
+  it('returns empty object for empty className', () => {
+    const backend = createWebCssBackend();
+    expect(backend.resolveStyle('', light)).toEqual({});
+    expect(backend.resolveStyle('   ', light)).toEqual({});
+  });
+
+  it('trims whitespace from className', () => {
+    const backend = createWebCssBackend();
+    expect(backend.resolveStyle('  p-4  bg-accent  ', light)).toEqual({
+      className: 'p-4  bg-accent',
+    });
+  });
+
+  it('has no native delivery surface', () => {
+    const backend = createWebCssBackend();
+    expect(backend.link).toBeUndefined();
+    expect(backend.unlink).toBeUndefined();
+    expect(backend.onConditionsChanged).toBeUndefined();
+    expect(backend.onThemeChanged).toBeUndefined();
   });
 });

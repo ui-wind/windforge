@@ -47,9 +47,26 @@ export type GenerateOptions = {
    * handles them via `color-scheme` conditions instead).
    */
   extraThemes?: string[];
+  /**
+   * Platform target (Phase 13). When `'web'`, `generate()` returns the
+   * compiled CSS in `result.css` alongside the native artifact. The CSS is
+   * the raw Tailwind output — valid as-is for web browsers. Class names are
+   * stable (identity map), so no lowering or renaming is needed.
+   * Default: undefined (native-only, no CSS returned).
+   */
+  platform?: 'web' | 'native';
 };
 
-export type GenerateResult = BuildResult;
+export type GenerateResult = BuildResult & {
+  /**
+   * Compiled CSS string, present only when `platform === 'web'`.
+   * Contains all rules including media queries, pseudo-selectors, and
+   * theme-variant selectors. Native-only conditions (e.g. `platform: ios`)
+   * are NOT filtered — they produce valid CSS selectors that simply never
+   * match in a browser, which is harmless and avoids divergent outputs.
+   */
+  css?: string;
+};
 
 /** Full pipeline: compile → discover sources → scan → build → lower. */
 export async function generate(options: GenerateOptions): Promise<GenerateResult> {
@@ -100,7 +117,7 @@ export async function generate(options: GenerateOptions): Promise<GenerateResult
   });
   const css = prepared.compiler.build(candidates);
   if (css === '') {
-    return { artifact: emptyArtifact(), diagnostics: [] };
+    return { artifact: emptyArtifact(), diagnostics: [], ...(options.platform === 'web' ? { css: '' } : {}) };
   }
   const built = buildArtifact(
     css,
@@ -110,6 +127,7 @@ export async function generate(options: GenerateOptions): Promise<GenerateResult
   return {
     artifact: built.artifact,
     diagnostics: built.diagnostics,
+    ...(options.platform === 'web' ? { css } : {}),
   };
 }
 

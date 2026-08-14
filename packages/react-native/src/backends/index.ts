@@ -5,13 +5,24 @@
  */
 import { createFabricBackend } from './fabric.js';
 import { createJsBaselineBackend } from './js-baseline.js';
+import { createWebCssBackend } from './css.js';
 import type { StyleBackend, StyleBackendName } from './types.js';
 
 let current: StyleBackend | null = null;
 
 /** Choose the active backend. Called once at app startup. */
 export function selectBackend(name: StyleBackendName = 'js-baseline'): StyleBackend {
-  current = name === 'fabric' ? createFabricBackend() : createJsBaselineBackend();
+  switch (name) {
+    case 'fabric':
+      current = createFabricBackend();
+      break;
+    case 'web-css':
+      current = createWebCssBackend();
+      break;
+    default:
+      current = createJsBaselineBackend();
+      break;
+  }
   return current;
 }
 

@@ -22,7 +22,7 @@ import type { ComponentState, ConditionState } from '../state.js';
  * (installed via `setBackend`) keep autocomplete for the built-ins while
  * accepting any name.
  */
-export type StyleBackendName = 'js-baseline' | 'fabric' | (string & {});
+export type StyleBackendName = 'js-baseline' | 'fabric' | 'web-css' | (string & {});
 
 /** Opaque native handle for a mounted host node (Fabric tag in production). */
 export type StyleHandle = number;

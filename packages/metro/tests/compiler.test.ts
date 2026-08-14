@@ -168,4 +168,65 @@ describe('compileWindforge', () => {
     expect(diagnostics.map((d) => d.code)).toEqual(['WF3010']);
     expect(diagnostics[0]?.message).toContain('dependencies');
   });
+
+  describe('web platform split', () => {
+    it('emits CSS and web JS module when platform is web', async () => {
+      const outputDir = await tempOutputDir();
+      const result = await compileWindforge({
+        entry: ENTRY,
+        base: FIXTURE,
+        outputDir,
+        diagnostics: false,
+        watch: false,
+        platform: 'web',
+      });
+      expect(result.webCssFile).toBeDefined();
+      expect(result.webOutputFile).toBeDefined();
+
+      const css = await readFile(result.webCssFile!, 'utf8');
+      expect(css).toContain('.p-4');
+
+      const webJs = await readFile(result.webOutputFile!, 'utf8');
+      expect(webJs).toContain('cssPath');
+      expect(webJs).toContain('styles.css');
+      expect(webJs).toContain('registerArtifact');
+
+      // Native artifact is still written.
+      const nativeJs = await readFile(result.outputFile, 'utf8');
+      expect(nativeJs).toContain('registerArtifact');
+    });
+
+    it('skips web files when webResolution is runtime', async () => {
+      const outputDir = await tempOutputDir();
+      const result = await compileWindforge({
+        entry: ENTRY,
+        base: FIXTURE,
+        outputDir,
+        diagnostics: false,
+        watch: false,
+        platform: 'web',
+        webResolution: 'runtime',
+      });
+      expect(result.webCssFile).toBeUndefined();
+      expect(result.webOutputFile).toBeUndefined();
+
+      // Native artifact is still present.
+      const content = await readFile(result.outputFile, 'utf8');
+      expect(content).toContain('registerArtifact');
+    });
+
+    it('does not emit web files for native platform', async () => {
+      const outputDir = await tempOutputDir();
+      const result = await compileWindforge({
+        entry: ENTRY,
+        base: FIXTURE,
+        outputDir,
+        diagnostics: false,
+        watch: false,
+        platform: 'native',
+      });
+      expect(result.webCssFile).toBeUndefined();
+      expect(result.webOutputFile).toBeUndefined();
+    });
+  });
 });

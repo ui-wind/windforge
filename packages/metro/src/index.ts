@@ -2,6 +2,8 @@ export {
   compileWindforge,
   GENERATED_FILE_NAME,
   GENERATED_MODULE_NAME,
+  GENERATED_WEB_CSS_NAME,
+  GENERATED_WEB_FILE_NAME,
   type CompileWindforgeOptions,
   type CompileWindforgeResult,
 } from './compiler.js';

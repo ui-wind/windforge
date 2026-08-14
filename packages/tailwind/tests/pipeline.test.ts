@@ -154,6 +154,35 @@ describe('generate (end-to-end pipeline)', () => {
   });
 });
 
+describe('generate({ platform: "web" })', () => {
+  it('returns raw CSS when platform is web', async () => {
+    const result = await generate({ entry: ENTRY, base: FIXTURE, platform: 'web' });
+    expect(result.css).toBeDefined();
+    expect(typeof result.css).toBe('string');
+    expect(result.css!.length).toBeGreaterThan(0);
+    // Fixture utilities must appear in the compiled CSS.
+    expect(result.css).toContain('.p-4');
+    expect(result.css).toContain('.bg-zinc-950');
+    // Pseudo-class and media selectors are present (browser evaluates them).
+    expect(result.css).toContain('hover\\:bg-red-500');
+    expect(result.css).toContain('@media');
+  });
+
+  it('omits css field when platform is not specified (native default)', async () => {
+    const result = await generate({ entry: ENTRY, base: FIXTURE });
+    expect(result.css).toBeUndefined();
+    // Artifact is still produced for native consumption.
+    expect(result.artifact.hash).toBeTruthy();
+    expect(Object.keys(result.artifact.styles).length).toBeGreaterThan(0);
+  });
+
+  it('produces deterministic CSS across builds', async () => {
+    const first = await generate({ entry: ENTRY, base: FIXTURE, platform: 'web' });
+    const second = await generate({ entry: ENTRY, base: FIXTURE, platform: 'web' });
+    expect(first.css).toBe(second.css);
+  });
+});
+
 describe('buildArtifact (direct CSS input)', () => {
   it('merges repeated properties within a rule (later wins)', () => {
     const css = `
