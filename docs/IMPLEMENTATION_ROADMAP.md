@@ -956,6 +956,7 @@ Verify the peer dependency ranges widened in Phase 15 actually work with RN 0.87
   - `Dimensions.addEventListener('change', ({ window }) => ...)` → destructured param inferred as `any` due to RN 0.87 generated types typing handler as `Function`. Fixed by annotating parameter structurally: `(event: { window: { width: number; height: number } }) =>`.
   - `export const Image = createStyledComponent<ImageProps>(...)` → TS2742 non-portable inferred type through RN 0.87 generated StyleSheetTypes. Fixed by adding explicit `ForwardRefExoticComponent<Props & RefAttributes<unknown>>` return type annotations to View/Text/Image exports.
   - Both fixes are backward-compatible with RN 0.86. 157/157 tests pass against RN 0.87 types; full gate (31 tasks) green at RN 0.86.
+- **A3. Web E2E integration tests**: Playwright headless Chromium tests in `apps/vite-example/tests/e2e.test.ts`. Verifies: className stamped on DOM, bg-accent token resolves to colored value, hover:bg-red-500 activates on mouseover (color changes), dark:bg-zinc-900 activates via prefers-color-scheme media query, sm:bg-green-700 responsive breakpoint applies at ≥640px viewport. Uses `vite preview` against built dist. Color assertions use format-agnostic matching (Tailwind v4 emits oklch/oklab, browsers may report either). Run via `pnpm --filter windforge-vite-example test:e2e` (not in default turbo gate — requires ~150MB browser download).
 
 ### Scope notes
 

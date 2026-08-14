@@ -17,6 +17,7 @@
     "clean": "turbo run clean && rm -rf node_modules"
   },
   "devDependencies": {
+    "playwright": "^1.62.1",
     "pngjs": "^7.0.0",
     "turbo": "^2.5.0",
     "typescript": "^5.9.2",

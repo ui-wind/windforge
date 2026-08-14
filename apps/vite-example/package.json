@@ -7,7 +7,8 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:e2e": "vitest run tests/"
   },
   "dependencies": {
     "@windforge/react-native": "workspace:*",
@@ -20,7 +21,9 @@
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^6.0.5",
+    "playwright": "^1.62.1",
     "typescript": "^5.8.3",
-    "vite": "^8.2.1"
+    "vite": "^8.2.1",
+    "vitest": "^3.2.7"
   }
 }
