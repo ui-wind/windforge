@@ -1,0 +1,17 @@
+# Build artifacts only — the native source folders ios/ and android/ ARE
+# committed (bare RN CLI apps treat them as source, unlike apps/example).
+ios/Pods/
+ios/build/
+ios/.xcode.env.local
+vendor/
+android/.gradle/
+android/app/build/
+android/app/.cxx/
+android/build/
+android/local.properties
+*.keystore
+!android/app/debug.keystore
+
+# Windforge / Metro
+.windforge/
+Gemfile.lock

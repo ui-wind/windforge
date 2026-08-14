@@ -3,6 +3,11 @@
 // compileWindforge runs the build pipeline (source discovery -> Tailwind v4 ->
 // CSS AST -> Style IR) and writes the generated runtime module; withWindforge
 // installs the resolver hook that maps `windforge/generated` to it.
+//
+// compileWindforge also starts a file watcher (on by default, off in CI):
+// adding or editing a class under the app rewrites the artifact in place,
+// Metro sees the change inside the project root and rebundles — no Metro
+// restart needed when sources change.
 const path = require('node:path');
 const { getDefaultConfig } = require('expo/metro-config');
 const { compileWindforge, withWindforge } = require('@windforge/metro');

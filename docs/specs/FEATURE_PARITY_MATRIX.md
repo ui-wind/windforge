@@ -17,7 +17,7 @@ Legend:
 | @theme | P0 | ✓ | ✓ | Token IR |
 | @utility | P1 | ✓ | ✓ | Extension API (Phase 8: `defineUtility` authoring) |
 | @custom-variant | P1 | ✓ | ✓ | Variant compiler (Phase 8: `defineVariant` authoring) |
-| @source | P0 | ✓ | ✓ | Monorepo/content discovery |
+| @source | P0 | ✓ | ✓ | ✅ Phase 10: `compiler.sources` — official Tailwind auto-detect + `@source` + `.gitignore` |
 | @plugin | P1 | ✓ | ✓ | Isolated plugin adapter |
 | arbitrary values | P0 | ✓ | ✓ | Capability checked |
 | arbitrary properties | P1 | ✓ | ✓ | Where representable |
@@ -86,12 +86,12 @@ Legend:
 
 | Feature | Priority | Notes |
 |---|---:|---|
-| Metro plugin | P0 | |
+| Metro plugin | P0 | ✅ Phase 10: `@windforge/metro` verified on Expo (`apps/example`) and bare RN CLI (`apps/bare`); `MetroConfigLike` keeps it Expo-agnostic |
 | CLI | P0 | |
 | diagnostics | P0 | Phase 5: runtime counters + WF2001/WF2002 warn-once |
 | IntelliSense metadata | P1 | |
 | source maps | P1 | |
-| HMR | P0 | |
+| HMR | P0 | ✅ Phase 10: file watcher regenerates `.windforge/generated.js` inside the project root; Metro invalidates without restart (no Metro-internals patching) |
 | monorepo support | P0 | ✅ Phase 9: pnpm+turbo workspace; CI runs build/typecheck/test across all packages (`.github/workflows/ci.yml`) |
 | cache inspection | P1 | |
 | compiler debug mode | P1 | |
@@ -110,4 +110,4 @@ Legend:
 | custom IR transforms | P1 | |
 | plugin lifecycle hooks | P1 | |
 | `@plugin` JS plugin adapter | P1 | Tailwind row above; distinct from the descriptor surface |
-| Flutter backend interface | P2 | Phase 10 research |
+| Flutter backend interface | P2 | Phase 14 research |

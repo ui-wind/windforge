@@ -4,6 +4,11 @@
 
 - React Native: 0.86 baseline (example: 0.86.2)
 - Expo SDK: 57 baseline
+- Bare React Native CLI: `@react-native-community/cli` 20.1.0 (`apps/bare`,
+  React Native 0.86.2, no Expo) — Windforge is wired through
+  `@windforge/metro` (`MetroConfigLike` accepts any structural Metro config)
+  and `@react-native/babel-preset`; verified iOS + Android, js-baseline
+  backend (Phase 10, `docs/guides/NATIVE_SETUP_BARE.md`)
 - New Architecture: required
 - Reanimated: `react-native-reanimated ^4.5` (example: 4.5.1) with
   `react-native-worklets ^0.10` (example: 0.10.1) — declared as the peer
@@ -20,6 +25,7 @@ Track at least:
 | Windforge | RN | Expo | Reanimated | Nitro | New Arch |
 |---|---|---|---|---|---|
 | development | 0.86 (`>=0.83 <0.87`) | SDK 57 | `^4.5` + worklets `^0.10` (verified 4.5.1/0.10.1) | optional/verified | required |
+| development (bare RN CLI) | 0.86.2 | — (no Expo) | not wired in `apps/bare` | n/a | required |
 
 ## Native adapter rule
 

@@ -1,0 +1,6 @@
+@import 'tailwindcss';
+
+@theme {
+  /* App accent token — becomes the bg-accent/text-accent utilities. */
+  --color-accent: #3b82f6;
+}

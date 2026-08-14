@@ -641,7 +641,108 @@ These are the Phase 9 decision records (Rule 13).
 Verification runbooks: `docs/guides/NATIVE_SETUP_IOS.md`,
 `docs/guides/NATIVE_SETUP_ANDROID.md`, `docs/guides/WEB_SETUP.md`.
 
-## Phase 10 — Flutter research
+## Phase 10 — RN CLI + Expo dual support, source discovery, watch/HMR ✅
+
+Goal: close the gap versus the Uniwind OSS feature set that Windforge was
+missing — verify a bare React Native CLI project end to end, adopt
+Tailwind-native source discovery (`compiler.sources`: auto-detect +
+`@source` + `.gitignore`), and make newly added classes reach a running app
+without a Metro restart. Direction decision: keep delegating to the official
+Tailwind v4 engines (`@tailwindcss/oxide` + `@tailwindcss/node`), and solve
+HMR with a file watcher that regenerates the artifact — not by patching
+Metro internals (patterns studied from the MIT Uniwind clone, facts only,
+no copied code).
+
+Done:
+
+- ✅ `@windforge/tailwind` source discovery: `generate()` now runs the
+  `@tailwindcss/node` compile first, then scans `compiler.sources` (official
+  auto-detect, honoring `@source` directives and `.gitignore`) plus the
+  entry-directory glob; `defaultSources` is kept additively so repos without
+  auto-detected sources behave as before. Fixtures `tests/fixtures/sources/`
+  + `sources-not/` with an `@source "../shared"` target and a
+  `.gitignore`-excluded `Secret.tsx` (force-added to git);
+  `source-discovery.test.ts`.
+- ✅ Color fix: the lightningcss N-API bridge delivers a CSS `none` channel
+  as `NaN`; `channel()` (`css/color.ts`) maps null/undefined/NaN → `none`
+  for every color function that lowers through it. `zinc-50`
+  (`oklch(98.5% 0 none)`) now resolves to `#fafafa`; regression test in
+  `tests/color.test.ts`.
+- ✅ `@windforge/metro` watch mode: `compileWindforge({ watch })` starts
+  `fs.watch` (recursive) over the scan bases plus every CSS dependency
+  collected through the existing `onDependency` hook; 100 ms debounce,
+  artifact write skipped when bytes are unchanged; `stop()` plus
+  `SIGINT`/`SIGTERM`/`exit` cleanup. Default on, disabled by `watch: false`
+  or `process.env.CI`. `watch.test.ts` (temp dirs).
+- ✅ `apps/bare`: bare RN CLI app (React Native 0.86.2,
+  `@react-native-community/cli` 20.1.0) — `getDefaultConfig` from
+  `@react-native/metro-config` + workspace-root `watchFolders` +
+  `withWindforge`; `@react-native/babel-preset` only; package
+  `dev.windforge.bare`; committed `ios/` + `android/`. Demo screen:
+  `@theme` accent token, light/dark zinc pairs, system→light→dark cycle
+  button. `@windforge/metro` needed no code change — `MetroConfigLike`
+  already made it Expo-agnostic.
+- ✅ `apps/example` gains watch mode automatically; its `metro.config.js`
+  comment updated (no more Metro restart when adding a class).
+
+Measured (Rule 11; real runs, 2026-08-14, runbook
+`docs/guides/NATIVE_SETUP_BARE.md`):
+
+| measurement | result |
+| --- | --- |
+| bare iOS simulator (iPhone 17 Pro sim), light+dark, scheme `system` | 7/7 exact pixels per mode: root `#f4f4f5`/`#09090b`, accent `#3b82f6`, zinc-300/700 `#d4d4d8`/`#3f3f46`, zinc-900/50 `#18181b`/`#fafafa`, rose-500 `#ff2056`, card `#fafafa`/`#18181b` |
+| bare Android (Pixel_9, arm64-v8a), light+dark | same table exact |
+| HMR, live | adding a class changed the artifact hash `54cd11a7` → `31a1f3d0` (`bg-rose-500` present); the running iOS app rendered the new swatch via HMR; deleting the change restored the artifact byte-for-byte (`54cd11a7`); Metro PID 7397 unchanged throughout |
+| HMR, log evidence | HMR pushes are silent in the Metro log (no new BUNDLE lines); Android's fresh bundle request from the same Metro process is the log proof (BUNDLE count 3 → 9, same PID) |
+| bare Android build | `BUILD SUCCESSFUL` (4 s warm retry after the storage fix; CMake for arm64-v8a/armeabi-v7a/x86/x86_64) |
+| source discovery | `@source "../shared"` candidates found; `.gitignore`-excluded source absent from the artifact |
+
+Scope notes:
+
+- `apps/bare` verifies the js-baseline backend on both platforms; the
+  fabric backend remains verified in `apps/example` (Phases 3–4).
+- Landscape and release builds for `apps/bare` were not run (covered by the
+  example matrix E2/E4).
+- One unexplained environment anomaly: an iOS `simctl ui appearance` flip
+  occasionally double-advanced the demo button's state; it did not
+  reproduce on retest and the app logic is verified clean — noted for
+  transparency (Rule 14), not a known product defect.
+
+### Decisions
+
+These are the Phase 10 decision records (Rule 13).
+
+- **File watcher + artifact regeneration, not Metro-internals patching.**
+  The artifact lives inside the project root, so Metro's own watcher
+  invalidates `windforge/generated` and pushes HMR naturally. This is
+  deliberately different from Uniwind OSS's `Graph.traverseDependencies`
+  patch: nothing to break across Metro versions.
+- **Watch defaults on, off in CI / `watch: false`.** Debounce 100 ms and
+  skip-write on identical artifact bytes prevent invalidation loops on
+  no-op regenerations.
+- **`apps/bare` commits `ios/` + `android/`.** Bare CLI apps own their
+  native projects as source; the never-commit rule from now on applies to
+  `apps/example` only (its native folders remain `expo prebuild` output).
+- **Source discovery delegates to `compiler.sources`.** Official Tailwind
+  semantics (auto-detect, `@source`, `.gitignore`) with no re-implementation;
+  `defaultSources` stays additive for backward compatibility.
+- **pnpm + bare CLI:** `android/settings.gradle` `includeBuild` assumes a
+  hoisted layout, so `@react-native/gradle-plugin` is an explicit
+  devDependency of `apps/bare` (same version as `react-native`).
+- **`rose-500` is `#ff2056`, not the v3 `#f43f5e`.** Tailwind v4 palettes
+  are oklch-native and the saturated triple sits slightly outside sRGB;
+  naive clamp, culori `toGamut('rgb')` and CSS gamut mapping all agree.
+  The pixel doubles as the oklch→sRGB lowering canary.
+- **`NaN` hue handling lives in `channel()`.** The N-API bridge turns CSS
+  `none` into `NaN`; mapping it back to `none` at the single lowering point
+  fixes every affected color function at once.
+- **Flutter research renumbered Phase 10 → Phase 14** to make room for the
+  Uniwind-parity phases 10–13.
+
+Demo: `apps/bare/src/App.tsx`. Verification runbook:
+`docs/guides/NATIVE_SETUP_BARE.md`.
+
+## Phase 14 — Flutter research
 
 Only now evaluate the Flutter backend.
 
