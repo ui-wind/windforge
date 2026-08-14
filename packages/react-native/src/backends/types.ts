@@ -15,7 +15,7 @@
  * backend talks to native only through its adapter interface.
  */
 import type { ReactNativeStyle } from '../resolve.js';
-import type { ConditionState } from '../state.js';
+import type { ComponentState, ConditionState } from '../state.js';
 
 /**
  * Built-in backend names. Widened with `(string & {})` so custom backends
@@ -35,8 +35,17 @@ export interface StyleBackend {
    * while its native adapter is available.
    */
   requiresContext(): boolean;
-  /** Resolve a className string for the given condition state. */
-  resolveStyle(className: string, state: ConditionState): ReactNativeStyle;
+  /**
+   * Resolve a className string for the given condition state.
+   * `componentState` (Phase 11) is optional and additive: it carries the
+   * component's own interaction/data facts for `state`/`data` conditions.
+   * Backends without interaction delivery may ignore it.
+   */
+  resolveStyle(
+    className: string,
+    state: ConditionState,
+    componentState?: ComponentState,
+  ): ReactNativeStyle;
   /** Bind a mounted host node to a className (native delivery only). */
   link?(handle: StyleHandle, className: string, state: ConditionState): void;
   /** Remove a binding on unmount. */

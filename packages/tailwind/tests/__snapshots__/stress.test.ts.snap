@@ -2,8 +2,8 @@
 
 exports[`full-utility-surface sweep > snapshots the artifact shape (update only on intended compiler changes) 1`] = `
 {
-  "classes": 85,
-  "conditions": 7,
-  "hash": "2d860987",
+  "classes": 96,
+  "conditions": 16,
+  "hash": "ff8ac61a",
 }
 `;

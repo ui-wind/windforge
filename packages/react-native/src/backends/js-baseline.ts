@@ -11,6 +11,7 @@ export function createJsBaselineBackend(): StyleBackend {
   return {
     name: 'js-baseline',
     requiresContext: () => true,
-    resolveStyle: (className, state) => resolveClassNames(className, state),
+    resolveStyle: (className, state, componentState) =>
+      resolveClassNames(className, state, componentState),
   };
 }

@@ -74,6 +74,39 @@ const artifact: RuntimeArtifact = {
         },
       ],
     },
+    'active:bg-red-500': {
+      base: [],
+      variants: [
+        {
+          conditionIds: ['state:active'],
+          declarations: [
+            { property: 'backgroundColor', value: { kind: 'color', value: '#ef4444' }, sourceOrder: 0 },
+          ],
+        },
+      ],
+    },
+    'group-hover:bg-blue-500': {
+      base: [],
+      variants: [
+        {
+          conditionIds: ['state:hover:group'],
+          declarations: [
+            { property: 'backgroundColor', value: { kind: 'color', value: '#3b82f6' }, sourceOrder: 0 },
+          ],
+        },
+      ],
+    },
+    'data-[selected=true]:bg-emerald-500': {
+      base: [],
+      variants: [
+        {
+          conditionIds: ['data:selected=true'],
+          declarations: [
+            { property: 'backgroundColor', value: { kind: 'color', value: '#10b981' }, sourceOrder: 0 },
+          ],
+        },
+      ],
+    },
     'animate-spin': {
       base: [],
       animation: {
@@ -128,6 +161,9 @@ const artifact: RuntimeArtifact = {
       value: { kind: 'dimension', value: 640, unit: 'px' },
     },
     { kind: 'platform', id: 'platform:ios', platform: 'ios' },
+    { kind: 'state', id: 'state:active', state: 'active' },
+    { kind: 'state', id: 'state:hover:group', state: 'hover', group: true },
+    { kind: 'data', id: 'data:selected=true', name: 'selected', value: 'true' },
   ],
 };
 
@@ -189,6 +225,84 @@ describe('resolution', () => {
       },
     });
     expect(resolveClassNames('p-4', light)).toEqual({ padding: 24 });
+  });
+});
+
+describe('component state (Phase 11)', () => {
+  beforeEach(() => {
+    __resetRegistry();
+    __clearStyleCache();
+    __resetRuntimeDiagnostics();
+    registerArtifact(artifact);
+  });
+
+  it('keeps state/data variants inactive without component state', () => {
+    expect(resolveClassNames('active:bg-red-500', light)).toEqual({});
+    expect(resolveClassNames('group-hover:bg-blue-500', light)).toEqual({});
+    expect(resolveClassNames('data-[selected=true]:bg-emerald-500', light)).toEqual({});
+  });
+
+  it('activates state variants from the component state flags', () => {
+    expect(resolveClassNames('active:bg-red-500', light, { pressed: true })).toEqual({
+      backgroundColor: '#ef4444',
+    });
+    // Wrong flag does not activate.
+    expect(resolveClassNames('active:bg-red-500', light, { hovered: true })).toEqual({});
+  });
+
+  it('activates group variants from the groups slot', () => {
+    expect(
+      resolveClassNames('group-hover:bg-blue-500', light, {
+        groups: { '': { hovered: true } },
+      }),
+    ).toEqual({ backgroundColor: '#3b82f6' });
+    // The component's own hovered flag is not a group state.
+    expect(resolveClassNames('group-hover:bg-blue-500', light, { hovered: true })).toEqual({});
+  });
+
+  it('activates data variants from the data slot', () => {
+    expect(
+      resolveClassNames('data-[selected=true]:bg-emerald-500', light, {
+        data: { selected: true },
+      }),
+    ).toEqual({ backgroundColor: '#10b981' });
+    expect(
+      resolveClassNames('data-[selected=true]:bg-emerald-500', light, {
+        data: { selected: 'false' },
+      }),
+    ).toEqual({});
+  });
+
+  it('variant declarations outrank base utilities regardless of token order', () => {
+    // CSS specificity: a conditional selector beats the plain utility it
+    // restyles, whether the variant token comes first …
+    expect(
+      resolveClassNames('active:bg-red-500 bg-zinc-950', light, { pressed: true }),
+    ).toEqual({ backgroundColor: '#ef4444' });
+    // … or second.
+    expect(
+      resolveClassNames('bg-zinc-950 active:bg-red-500', light, { pressed: true }),
+    ).toEqual({ backgroundColor: '#ef4444' });
+    // Idle: the base utility applies.
+    expect(resolveClassNames('active:bg-red-500 bg-zinc-950', light)).toEqual({
+      backgroundColor: '#09090b',
+    });
+  });
+
+  it('group variants outrank base utilities too', () => {
+    expect(
+      resolveClassNames('group-hover:bg-blue-500 bg-zinc-950', light, {
+        groups: { '': { hovered: true } },
+      }),
+    ).toEqual({ backgroundColor: '#3b82f6' });
+  });
+
+  it('keys caches by component state with stable identity', () => {
+    const idle = resolveClassNames('active:bg-red-500', light);
+    const pressed = resolveClassNames('active:bg-red-500', light, { pressed: true });
+    expect(pressed).not.toBe(idle);
+    expect(resolveClassNames('active:bg-red-500', light, { pressed: true })).toBe(pressed);
+    expect(resolveClassNames('active:bg-red-500', light)).toBe(idle);
   });
 });
 

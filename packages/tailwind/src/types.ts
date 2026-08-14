@@ -1,7 +1,12 @@
 /**
  * Shared types for the Tailwind frontend.
  */
-import type { ConditionIR } from '@windforge/ir';
+import type {
+  ConditionIR,
+  DataConditionIR,
+  InteractionState,
+  StateConditionIR,
+} from '@windforge/ir';
 
 /** Frontend diagnostic. Codes are WF1xxx (Tailwind frontend layer). */
 export type Diagnostic = {
@@ -10,15 +15,17 @@ export type Diagnostic = {
 };
 
 /**
- * Resolved condition specs collected from @media queries. These are lowered
- * to @windforge/ir ConditionIR when the artifact is built.
+ * Resolved condition specs collected from @media queries and selectors. These
+ * are lowered to @windforge/ir ConditionIR when the artifact is built.
  */
 export type ConditionSpec =
   | { kind: 'color-scheme'; scheme: 'light' | 'dark' }
   | { kind: 'media-width'; operator: '>=' | '<='; px: number }
   | { kind: 'orientation'; orientation: 'portrait' | 'landscape' }
   | { kind: 'platform'; platform: 'ios' | 'android' | 'web' | 'native' }
-  | { kind: 'layout-direction'; direction: 'ltr' | 'rtl' };
+  | { kind: 'layout-direction'; direction: 'ltr' | 'rtl' }
+  | { kind: 'state'; state: InteractionState; group?: boolean; groupName?: string }
+  | { kind: 'data'; name: string; value?: string };
 
 /** Deterministic id for a condition spec. */
 export function conditionId(spec: ConditionSpec): string {
@@ -33,6 +40,15 @@ export function conditionId(spec: ConditionSpec): string {
       return `platform:${spec.platform}`;
     case 'layout-direction':
       return `layout-direction:${spec.direction}`;
+    case 'state': {
+      let id = `state:${spec.state}`;
+      if (spec.group) id += `:group${spec.groupName ? `:${spec.groupName}` : ''}`;
+      return id;
+    }
+    case 'data':
+      return spec.value === undefined
+        ? `data:${spec.name}`
+        : `data:${spec.name}=${spec.value}`;
   }
 }
 
@@ -59,5 +75,18 @@ export function specToConditionIR(spec: ConditionSpec): ConditionIR {
       return { kind: 'platform', id, platform: spec.platform };
     case 'layout-direction':
       return { kind: 'layout-direction', id, direction: spec.direction };
+    case 'state': {
+      const ir: StateConditionIR = { kind: 'state', id, state: spec.state };
+      if (spec.group) {
+        ir.group = true;
+        if (spec.groupName !== undefined) ir.groupName = spec.groupName;
+      }
+      return ir;
+    }
+    case 'data': {
+      const ir: DataConditionIR = { kind: 'data', id, name: spec.name };
+      if (spec.value !== undefined) ir.value = spec.value;
+      return ir;
+    }
   }
 }

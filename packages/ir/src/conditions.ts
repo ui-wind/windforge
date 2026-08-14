@@ -67,6 +67,22 @@ export type StateConditionIR = {
   groupName?: string;
 };
 
+/**
+ * Data-attribute condition (`data-[selected]` / `data-[selected=true]`).
+ *
+ * Evaluated against the component's props, not the environment: on native
+ * the runtime reads the matching `data-*` prop (presence, or exact match
+ * when `value` is set); on web the same selectors apply to DOM attributes.
+ */
+export type DataConditionIR = {
+  kind: 'data';
+  id: string;
+  /** Attribute name without the `data-` prefix (e.g. `selected`). */
+  name: string;
+  /** Expected value; absent means attribute presence (any value). */
+  value?: string;
+};
+
 export type ContainerOperator = '>' | '>=' | '<' | '<=' | '=';
 
 export type ContainerConditionIR = {
@@ -93,6 +109,7 @@ export type ConditionIR =
   | PlatformConditionIR
   | LayoutDirectionConditionIR
   | StateConditionIR
+  | DataConditionIR
   | ContainerConditionIR
   | CustomConditionIR;
 

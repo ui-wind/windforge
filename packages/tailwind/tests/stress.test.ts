@@ -100,14 +100,27 @@ const VARIANT_STACKS = [
   'dark:sm:bg-emerald-500', 'sm:dark:text-white',
 ];
 
+// Phase 11: interactive variants lower to state/data conditions instead of
+// being skipped (pseudo states, group variants, data-* variants, stacks).
+const INTERACTIVE = [
+  'hover:bg-red-500', 'active:bg-red-500', 'focus:bg-red-500',
+  'focus-visible:bg-red-500', 'disabled:opacity-50',
+  'group-hover:bg-red-500', 'group-active:bg-red-500',
+  'group-hover/sidebar:bg-red-500',
+  'data-[selected=true]:bg-emerald-500', 'data-[open]:bg-cyan-500',
+  'hover:dark:bg-red-700',
+];
+
 const SUPPORTED = [
   ...SPACING, ...SIZING, ...FLEX, ...POSITION, ...COLORS, ...TYPOGRAPHY,
   ...BORDERS, ...OPACITY, ...TRANSFORMS, ...MOTION, ...ARBITRARY,
-  ...VARIANT_STACKS,
+  ...VARIANT_STACKS, ...INTERACTIVE,
 ];
 
-// Control set: expected to be skipped with exactly the documented diagnostic.
-const CONTROLS = ['hover:bg-red-500'];
+// Control set: selectors Tailwind compiles but Windforge does not support —
+// each skipped with exactly one deduplicated WF1004 (a structural
+// pseudo-class outside the interactive set, and a pseudo-element).
+const CONTROLS = ['first:bg-white', 'placeholder:text-zinc-400'];
 
 describe('full-utility-surface sweep', () => {
   let output: BuildOutput;
@@ -128,10 +141,12 @@ describe('full-utility-surface sweep', () => {
     expect(unexpected).toEqual([]);
   });
 
-  it('reports exactly one deduplicated WF1004 for the pseudo-state control', () => {
+  it('reports exactly one deduplicated WF1004 per unsupported control selector', () => {
     const wf1004 = output.diagnostics.filter((d) => d.code === 'WF1004');
-    expect(wf1004).toHaveLength(1);
-    expect(output.artifact.styles['hover:bg-red-500']).toBeUndefined();
+    expect(wf1004).toHaveLength(CONTROLS.length);
+    for (const control of CONTROLS) {
+      expect(output.artifact.styles[control]).toBeUndefined();
+    }
   });
 
   it('keeps dependencies keyed 1:1 with styles', () => {

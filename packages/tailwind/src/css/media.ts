@@ -2,17 +2,28 @@
  * @media query → ConditionSpec lowering.
  *
  * Supported today: prefers-color-scheme, width ranges (>= / <=), orientation.
- * Pointer-capability queries (`@media (hover: hover)`) are pointer-caps and
- * get deferred to the interactive phase — the caller turns the reason into a
- * diagnostic.
+ * Pointer-capability queries (`@media (hover: hover)`) are capability gates
+ * that the runtime cannot evaluate. By default they fail the parse (the
+ * caller turns the reason into a diagnostic); with
+ * `transparentPointerCaps` the collector instead treats them as no-op
+ * wrappers — Tailwind wraps every `hover:`/`group-hover:` utility in
+ * `@media (hover: hover)`, and the interaction state itself is delivered by
+ * the runtime's component state, not by a capability condition.
  */
 import type { ConditionSpec, Diagnostic } from '../types.js';
 import { REM_PX } from './resolve.js';
 
 type AnyRecord = Record<string, unknown>;
 
+export type MediaParseOptions = {
+  /** Drop pointer-capability features instead of failing on them. A query
+   * made only of pointer caps parses to zero conditions with
+   * `pointerOnly: true`. */
+  transparentPointerCaps?: boolean;
+};
+
 export type MediaParseResult =
-  | { ok: true; conditions: ConditionSpec[] }
+  | { ok: true; conditions: ConditionSpec[]; pointerOnly?: boolean }
   | { ok: false; reason: string };
 
 function lengthToPx(value: AnyRecord): number | null {
@@ -27,7 +38,10 @@ function lengthToPx(value: AnyRecord): number | null {
   return null;
 }
 
-function parseFeatureCondition(condition: AnyRecord): MediaParseResult {
+function parseFeatureCondition(
+  condition: AnyRecord,
+  options?: MediaParseOptions,
+): MediaParseResult {
   const value = condition.value as AnyRecord | undefined;
   if (!value) return { ok: false, reason: 'empty media feature' };
 
@@ -66,6 +80,9 @@ function parseFeatureCondition(condition: AnyRecord): MediaParseResult {
       return { ok: false, reason: `layout-direction: ${ident}` };
     }
     if (name === 'hover' || name === 'pointer' || name === 'any-hover' || name === 'any-pointer') {
+      if (options?.transparentPointerCaps) {
+        return { ok: true, conditions: [], pointerOnly: true };
+      }
       return { ok: false, reason: `pointer-capability query (${name})` };
     }
     return { ok: false, reason: `media feature ${name}` };
@@ -96,7 +113,10 @@ function parseFeatureCondition(condition: AnyRecord): MediaParseResult {
  * condition specs. Tailwind emits one condition per @media block; comma-
  * separated (OR) lists are rejected.
  */
-export function parseMediaQuery(mediaRuleValue: AnyRecord): MediaParseResult {
+export function parseMediaQuery(
+  mediaRuleValue: AnyRecord,
+  options?: MediaParseOptions,
+): MediaParseResult {
   const queries = mediaRuleValue.mediaQueries as AnyRecord[] | undefined;
   if (!queries || queries.length === 0) {
     return { ok: false, reason: 'empty @media rule' };
@@ -114,14 +134,18 @@ export function parseMediaQuery(mediaRuleValue: AnyRecord): MediaParseResult {
     const parts = condition.conditions as AnyRecord[] | undefined;
     if (!parts) return { ok: false, reason: 'empty and-condition' };
     const conditions: ConditionSpec[] = [];
+    let pointerOnly = true;
     for (const part of parts) {
-      const parsed = parseFeatureCondition(part);
+      const parsed = parseFeatureCondition(part, options);
       if (!parsed.ok) return parsed;
       conditions.push(...parsed.conditions);
+      if (!parsed.pointerOnly) pointerOnly = false;
     }
-    return { ok: true, conditions };
+    const result: MediaParseResult = { ok: true, conditions };
+    if (pointerOnly) (result as { pointerOnly?: boolean }).pointerOnly = true;
+    return result;
   }
-  return parseFeatureCondition(condition);
+  return parseFeatureCondition(condition, options);
 }
 
 /** True when the failure is a pointer-capability query (hover: etc.). */
@@ -135,7 +159,7 @@ export function mediaDiagnostic(result: MediaParseResult): Diagnostic {
     return {
       code: 'WF1004',
       message:
-        'hover:/pointer variants require the interactive backend (Phase 2); rule skipped',
+        'Pointer-capability @media conditions are not runtime-evaluable; rule skipped',
     };
   }
   return {

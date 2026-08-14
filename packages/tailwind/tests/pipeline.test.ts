@@ -107,6 +107,13 @@ describe('generate (end-to-end pipeline)', () => {
     const ios = artifact.styles['ios:bg-white'];
     expect(ios.variants?.[0]?.conditionIds).toEqual(['platform:ios']);
 
+    // Phase 11: pseudo-class variants lower to state conditions end-to-end.
+    const hover = artifact.styles['hover:bg-red-500'];
+    expect(hover.variants?.[0]?.conditionIds).toEqual(['state:hover']);
+    expect(
+      artifact.conditions.some((c) => c.kind === 'state' && c.id === 'state:hover'),
+    ).toBe(true);
+
     // ---- dependencies (fabric prefilter data) ------------------------------
     // Base-only classes are condition-independent; variant classes list the
     // union of their variants' conditionIds.
@@ -115,13 +122,14 @@ describe('generate (end-to-end pipeline)', () => {
     expect(artifact.dependencies['dark:text-zinc-300']).toEqual(['color-scheme:dark']);
     expect(artifact.dependencies['sm:p-2']).toEqual(['media-width:>=:640']);
     expect(artifact.dependencies['ios:bg-white']).toEqual(['platform:ios']);
+    expect(artifact.dependencies['hover:bg-red-500']).toEqual(['state:hover']);
     // Every emitted class carries an entry, keyed 1:1 with styles.
     expect(Object.keys(artifact.dependencies).sort()).toEqual(
       Object.keys(artifact.styles).sort(),
     );
 
     // ---- diagnostics -------------------------------------------------------
-    expect(diagnostics.some((d) => d.code === 'WF1004')).toBe(true); // hover:
+    expect(diagnostics.some((d) => d.code === 'WF1004')).toBe(true); // first:
     // Color vars must resolve cleanly — no spurious "could not evaluate" noise.
     expect(diagnostics.some((d) => d.code === 'WF1002')).toBe(false);
 

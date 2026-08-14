@@ -4,12 +4,18 @@
  * Pure logic — no react-native imports — so it is trivially testable and
  * reusable by the web backend.
  */
-import type { ConditionIR } from '@windforge/ir';
-import type { ConditionState } from './state.js';
+import type { ConditionIR, InteractionState } from '@windforge/ir';
+import {
+  normalizeDataValue,
+  type ComponentState,
+  type ConditionState,
+  type GroupInteractionState,
+} from './state.js';
 
 export function evaluateCondition(
   condition: ConditionIR,
   state: ConditionState,
+  componentState?: ComponentState,
 ): boolean {
   switch (condition.kind) {
     case 'color-scheme':
@@ -40,11 +46,45 @@ export function evaluateCondition(
       }
       return false;
     }
-    // Interactive / container conditions are not evaluated by the MVP
-    // runtime; the interactive backend (Phase 2) owns them.
-    case 'state':
+    case 'state': {
+      if (!componentState) return false;
+      const source: GroupInteractionState = condition.group
+        ? componentState.groups?.[condition.groupName ?? ''] ?? {}
+        : componentState;
+      return interactionFlag(condition.state, source);
+    }
+    case 'data': {
+      const value = componentState?.data?.[condition.name];
+      if (value === undefined || value === null) return false;
+      if (condition.value === undefined) return true;
+      return normalizeDataValue(value) === condition.value;
+    }
+    // Container conditions are not evaluated by the current runtime.
     case 'container':
     case 'custom':
+      return false;
+  }
+}
+
+/** InteractionState → component fact. States without a native source
+ * (visited/checked/…) never activate. */
+function interactionFlag(state: InteractionState, source: GroupInteractionState): boolean {
+  switch (state) {
+    case 'hover':
+      return source.hovered === true;
+    case 'focus':
+      return source.focused === true;
+    case 'active':
+      return source.pressed === true;
+    case 'disabled':
+      return source.disabled === true;
+    case 'visited':
+    case 'checked':
+    case 'empty':
+    case 'readonly':
+    case 'required':
+    case 'first':
+    case 'last':
       return false;
   }
 }
@@ -54,7 +94,7 @@ function numberValue(condition: ConditionIR): number | null {
   const value = condition.value;
   if (value.kind === 'number') return value.value;
   if (value.kind === 'dimension') {
-    // Only px reaches the runtime today; the compiler bridges rem at build time.
+    // Only px/points reaches the runtime today; the compiler bridges rem at build time.
     return value.unit === 'px' || value.unit === 'points' ? value.value : null;
   }
   return null;

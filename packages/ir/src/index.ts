@@ -38,6 +38,7 @@ export type {
   PlatformConditionIR,
   LayoutDirectionConditionIR,
   StateConditionIR,
+  DataConditionIR,
   InteractionState,
   ContainerConditionIR,
   ContainerOperator,

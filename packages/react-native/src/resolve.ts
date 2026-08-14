@@ -22,7 +22,12 @@ import {
   recordResolve,
 } from './diagnostics.js';
 import { getArtifacts, registryVersion } from './registry.js';
-import { stateSignature, type ConditionState } from './state.js';
+import {
+  componentStateSignature,
+  stateSignature,
+  type ComponentState,
+  type ConditionState,
+} from './state.js';
 import type { ClassEntry, RuntimeArtifact } from './types.js';
 
 export type ReactNativeStyle = Record<string, unknown>;
@@ -97,19 +102,41 @@ function findClassEntry(className: string): { entry: ClassEntry; artifact: Runti
 }
 
 /**
- * Resolve one class name for the given runtime state.
+ * One class resolved into specificity tiers.
+ *
+ * `base` holds unconditional declarations; `variant` holds declarations from
+ * variants whose conditions are all active. Callers merge base first, then
+ * layer every variant on top — mirroring CSS, where a conditional selector
+ * (pseudo-class, group, data attribute) outranks a plain utility regardless
+ * of token order in the className string.
+ */
+export type ResolvedTiers = {
+  base: ReactNativeStyle;
+  variant: ReactNativeStyle;
+};
+
+/**
+ * Resolve one class name for the given runtime state, split by tier.
  *
  * Resolution order: style cache → build-time artifact entry → the controlled
  * runtime fallback parser (`parseStaticUtility`, cached, observable via
  * runtime diagnostics) → null. Unknown tokens the fallback cannot parse are
  * skipped by callers, with a WF2001 diagnostic recorded.
+ *
+ * `componentState` (Phase 11) evaluates `state`/`data` conditions against
+ * the component's own interaction facts; omitted on global resolution paths.
+ * The fallback parser emits static declarations only, so its output lands
+ * entirely in the base tier.
  */
-export function resolveClassName(
+export function resolveClassNameTiers(
   className: string,
   state: ConditionState,
-): ReactNativeStyle | null {
+  componentState?: ComponentState,
+): ResolvedTiers | null {
   recordResolve();
-  const signature = `${registryVersion()}|${className}|${stateSignature(state)}`;
+  const signature =
+    `${registryVersion()}|${className}|${stateSignature(state)}` +
+    `|${componentStateSignature(componentState)}`;
   const cached = styleCache.get(signature);
   if (cached) {
     recordCacheHit();
@@ -118,39 +145,56 @@ export function resolveClassName(
   recordCacheMiss();
 
   const found = findClassEntry(className);
-  let style: ReactNativeStyle | null = null;
+  let tiers: ResolvedTiers | null = null;
   if (found) {
     const { entry, artifact } = found;
-    style = declarationsToStyle(entry.base);
-    for (const variant of entry.variants ?? []) {
-      const active = variant.conditionIds.every((id) => {
+    const variant: ReactNativeStyle = {};
+    for (const rule of entry.variants ?? []) {
+      const active = rule.conditionIds.every((id) => {
         const condition = artifact.conditions.find((c) => c.id === id);
-        return condition ? evaluateCondition(condition, state) : false;
+        return condition ? evaluateCondition(condition, state, componentState) : false;
       });
-      if (active) Object.assign(style, declarationsToStyle(variant.declarations));
+      if (active) Object.assign(variant, declarationsToStyle(rule.declarations));
     }
+    tiers = { base: declarationsToStyle(entry.base), variant };
   } else {
     // Build-time tables first; the fallback only covers a controlled subset
     // of static utilities and never replaces the artifact path.
     const declarations = parseStaticUtility(className);
     if (declarations) {
       recordFallbackParse();
-      style = declarationsToStyle(declarations);
+      tiers = { base: declarationsToStyle(declarations), variant: {} };
     } else {
       recordFallbackMiss(className);
     }
   }
 
-  if (style) {
-    styleCache.set(signature, style);
+  if (tiers) {
+    styleCache.set(signature, tiers);
     if (styleCache.size > STYLE_CACHE_LIMIT) styleCache.clear();
   }
-  return style;
+  return tiers;
+}
+
+/**
+ * Resolve one class name to a flat style object (base then active variants).
+ * Prefer `resolveClassNameTiers` when merging multiple classes — a flat merge
+ * loses the tier information `resolveClassNames` needs for CSS-like
+ * specificity across tokens.
+ */
+export function resolveClassName(
+  className: string,
+  state: ConditionState,
+  componentState?: ComponentState,
+): ReactNativeStyle | null {
+  const tiers = resolveClassNameTiers(className, state, componentState);
+  return tiers ? { ...tiers.base, ...tiers.variant } : null;
 }
 
 const STYLE_CACHE_LIMIT = 4096;
-/** Per-token cache: `registryVersion|token|stateSignature` → class style. */
-const styleCache = new Map<string, ReactNativeStyle>();
+/** Per-token cache: `registryVersion|token|stateSignature|componentStateSignature`
+ * → class style split into base/variant tiers. */
+const styleCache = new Map<string, ResolvedTiers>();
 /** Composed-string cache (flyweight): identical className strings resolve to
  * the same object identity. */
 const composedCache = new Map<string, ReactNativeStyle>();
@@ -164,8 +208,15 @@ export function __clearStyleCache(): void {
 
 /**
  * Resolve a className string (whitespace-separated list) into a single style
- * object. Unknown classes are skipped; later classes override earlier ones
- * on conflict, matching utility-css intuition.
+ * object.
+ *
+ * Merge semantics mirror CSS specificity, not token position: all base
+ * declarations merge in token order (later wins on conflict), then all
+ * ACTIVE variant declarations layer on top in token order. A conditional
+ * utility (`active:bg-red-500`, `group-hover:…`, `data-[…]`, `dark:…`)
+ * therefore beats the base utility it restyles no matter which comes first
+ * in the string — same as Tailwind's generated CSS, where the variant
+ * selector is more specific.
  *
  * Results are cached by the full normalized string: repeated resolution of
  * the same string returns the SAME object (stable identity for cheap
@@ -174,17 +225,24 @@ export function __clearStyleCache(): void {
 export function resolveClassNames(
   className: string,
   state: ConditionState,
+  componentState?: ComponentState,
 ): ReactNativeStyle {
   const tokens = className.split(/\s+/).filter(Boolean);
-  const signature = `${registryVersion()}|${tokens.join(' ')}|${stateSignature(state)}`;
+  const signature =
+    `${registryVersion()}|${tokens.join(' ')}|${stateSignature(state)}` +
+    `|${componentStateSignature(componentState)}`;
   const composed = composedCache.get(signature);
   if (composed) return composed;
 
   const merged: ReactNativeStyle = {};
+  const variantOverlay: ReactNativeStyle = {};
   for (const name of tokens) {
-    const style = resolveClassName(name, state);
-    if (style) Object.assign(merged, style);
+    const tiers = resolveClassNameTiers(name, state, componentState);
+    if (!tiers) continue;
+    Object.assign(merged, tiers.base);
+    Object.assign(variantOverlay, tiers.variant);
   }
+  Object.assign(merged, variantOverlay);
   composedCache.set(signature, merged);
   if (composedCache.size > STYLE_CACHE_LIMIT) composedCache.clear();
   return merged;

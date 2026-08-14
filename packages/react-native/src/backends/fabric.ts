@@ -180,14 +180,16 @@ export function createFabricBackend(): StyleBackend {
     name: 'fabric',
     // Context re-renders are only needed while the native path is absent.
     requiresContext: () => nativeAdapter === null,
-    resolveStyle(className, state) {
+    resolveStyle(className, state, componentState) {
       // Normalize to the protocol key so registerStyles/updateStyles and
       // link always agree on what a mounted node is bound to.
       knownKeys.add(normalizeClassName(className));
       // Prefer the state the provider last observed: the context value is
       // frozen in fabric mode (that is what avoids re-renders), so late
       // mounts would otherwise resolve against stale conditions.
-      return resolveClassNames(className, currentState ?? state);
+      // Component state (interaction/data facts) always comes from the
+      // calling component — the native push path has no channel for it yet.
+      return resolveClassNames(className, currentState ?? state, componentState);
     },
     link(handle, className, state) {
       if (!nativeAdapter) {

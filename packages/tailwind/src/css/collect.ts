@@ -7,12 +7,15 @@
  *   condition context;
  * - top-level style rules flow through the visitor normally;
  * - `:root` / `:host` custom properties become the build-time variable map;
- * - pseudo-class rules (hover:, focus:, …) produce diagnostics — interactive
- *   states need the Phase 2 backend.
+ * - pseudo-class / attribute selectors (hover:, focus:, group-hover:,
+ *   data-[…]:, …) lower to `state` / `data` conditions evaluated against
+ *   component state at runtime (Phase 11). Selector shapes the runtime
+ *   cannot express produce a WF1004 diagnostic and are skipped.
  */
 import { transform } from 'lightningcss';
+import type { InteractionState } from '@windforge/ir';
 import type { ConditionSpec, Diagnostic } from '../types.js';
-import { isPointerCapabilityFailure, mediaDiagnostic, parseMediaQuery } from './media.js';
+import { mediaDiagnostic, parseMediaQuery } from './media.js';
 import type { VariableMap } from './resolve.js';
 import { normalizeTokens, scalarValue, type CssToken } from './token-print.js';
 
@@ -49,6 +52,135 @@ type Selector = { type: string; name?: string; kind?: string };
 function selectorName(selector: Selector): string | undefined {
   const name = selector.name ?? selector.kind;
   return typeof name === 'string' ? name : undefined;
+}
+
+/** Pseudo-classes the runtime can express as component state (Phase 11).
+ * `focus-visible` collapses to `focus` — React Native has one focus state. */
+const INTERACTIVE_PSEUDO_STATES: Record<string, InteractionState> = {
+  hover: 'hover',
+  focus: 'focus',
+  'focus-visible': 'focus',
+  active: 'active',
+  disabled: 'disabled',
+};
+
+/**
+ * Lower one compound-selector group (`.hover\:bg-x:hover`,
+ * `.group-hover\:bg-x:is(:where(.group):hover *)`,
+ * `.data-\[open\]\:bg-x[data-open]`, …) into its class name plus the
+ * interaction conditions the extra selector tokens express.
+ *
+ * Returns null for shapes the runtime cannot express; `recordUnsupported`
+ * fires the deduplicated WF1004 diagnostic.
+ */
+function lowerSelectorGroup(
+  group: Selector[],
+  recordUnsupported: (key: string) => void,
+): { className: string; conditions: ConditionSpec[] } | null {
+  const classTokens = group.filter((s) => s.type === 'class');
+  const className = classTokens.length === 1 ? selectorName(classTokens[0] as Selector) : undefined;
+  if (!className) {
+    recordUnsupported(classTokens.length > 1 ? 'compound class selector' : 'class-less selector');
+    return null;
+  }
+
+  const conditions: ConditionSpec[] = [];
+  for (const token of group) {
+    if (token.type === 'class') continue;
+
+    if (token.type === 'pseudo-class') {
+      const kind = token.kind as string | undefined;
+      const state = kind ? INTERACTIVE_PSEUDO_STATES[kind] : undefined;
+      if (state) {
+        conditions.push({ kind: 'state', state });
+        continue;
+      }
+      const groupSpec = kind === 'is' || kind === 'where'
+        ? matchGroupSelector(token as unknown as AnyRecord)
+        : null;
+      if (groupSpec) {
+        conditions.push(groupSpec);
+        continue;
+      }
+      recordUnsupported(`:${kind ?? 'unknown'}`);
+      return null;
+    }
+
+    if (token.type === 'pseudo-element') {
+      recordUnsupported(`::${selectorName(token) ?? 'unknown'}`);
+      return null;
+    }
+
+    if (token.type === 'attribute') {
+      const dataSpec = matchDataAttribute(token as unknown as AnyRecord);
+      if (dataSpec) {
+        conditions.push(dataSpec);
+        continue;
+      }
+      recordUnsupported(`attribute ${(token as unknown as AnyRecord).name as string}`);
+      return null;
+    }
+
+    recordUnsupported(token.type);
+    return null;
+  }
+
+  return { className, conditions };
+}
+
+/**
+ * Match Tailwind's group-selector shape inside `:is(...)`:
+ * `:is(:where(.group[/name]):state *)`. Returns the group state condition,
+ * or null when the shape is not a supported group selector.
+ */
+function matchGroupSelector(token: AnyRecord): ConditionSpec | null {
+  const lists = token.selectors as Selector[][] | undefined;
+  if (!Array.isArray(lists) || lists.length !== 1) return null;
+  const list = lists[0] as Selector[] | undefined;
+  if (!Array.isArray(list) || list.length !== 4) return null;
+  const [whereToken, stateToken, combinator, universal] = list as AnyRecord[];
+
+  if (whereToken?.type !== 'pseudo-class' || whereToken.kind !== 'where') return null;
+  const whereLists = whereToken.selectors as Selector[][] | undefined;
+  if (!Array.isArray(whereLists) || whereLists.length !== 1) return null;
+  const inner = whereLists[0] as Selector[] | undefined;
+  if (!Array.isArray(inner) || inner.length !== 1) return null;
+  const classToken = inner[0] as Selector | undefined;
+  if (classToken?.type !== 'class' || typeof classToken.name !== 'string') return null;
+  let groupName: string;
+  if (classToken.name === 'group') groupName = '';
+  else if (classToken.name.startsWith('group/')) groupName = classToken.name.slice('group/'.length);
+  else return null;
+
+  if (stateToken?.type !== 'pseudo-class') return null;
+  const state = INTERACTIVE_PSEUDO_STATES[stateToken.kind as string];
+  if (!state) return null;
+  if (combinator?.type !== 'combinator' || universal?.type !== 'universal') return null;
+
+  const spec: ConditionSpec = { kind: 'state', state, group: true };
+  if (groupName) (spec as { groupName?: string }).groupName = groupName;
+  return spec;
+}
+
+/**
+ * Match a `data-*` attribute selector: `[data-selected="true"]` (exact
+ * match) or `[data-open]` (presence). Other attribute operators (~=, ^=, …)
+ * and non-data attributes are not expressible in the runtime.
+ */
+function matchDataAttribute(token: AnyRecord): ConditionSpec | null {
+  const name = token.name;
+  if (typeof name !== 'string' || !name.startsWith('data-')) return null;
+  const operation = token.operation as
+    | { operator?: string; value?: unknown }
+    | null
+    | undefined;
+  if (operation === null || operation === undefined) {
+    return { kind: 'data', name: name.slice('data-'.length) };
+  }
+  if (operation.operator === 'equal' && typeof operation.value === 'string') {
+    return { kind: 'data', name: name.slice('data-'.length), value: operation.value };
+  }
+  return null;
 }
 
 /**
@@ -118,8 +250,17 @@ export function collectStylesheet(css: string): CollectedStylesheet {
   const classes = new Map<string, CollectedRule[]>();
   const keyframes: AnyRecord[] = [];
   const diagnostics: Diagnostic[] = [];
-  const seenPseudoDiagnostics = new Set<string>();
-  let pointerCapabilityDiagnosticEmitted = false;
+  const seenSelectorDiagnostics = new Set<string>();
+
+  /** Deduplicated WF1004 for selector shapes the runtime cannot express. */
+  function recordUnsupportedSelector(key: string): void {
+    if (seenSelectorDiagnostics.has(key)) return;
+    seenSelectorDiagnostics.add(key);
+    diagnostics.push({
+      code: 'WF1004',
+      message: `Unsupported selector (${key}); rule skipped`,
+    });
+  }
 
   function collectDeclarations(rule: AnyRecord, target: VariableMap): CollectedDeclaration[] {
     const declarationsBlock = rule.declarations as
@@ -151,38 +292,26 @@ export function collectStylesheet(css: string): CollectedStylesheet {
 
     for (const group of selectorGroups) {
       if (group.length === 0) continue;
-      const first = group[0] as Selector | undefined;
 
       // Custom properties on class-less rules (`:root`/universal) were already
       // harvested into the global map; non-class rules carry no style data.
       if (!group.some((s) => s.type === 'class')) continue;
       if (declarations.length === 0) continue;
 
-      const pseudo = group.find(
-        (s) => s.type === 'pseudo-class' || s.type === 'pseudo-element',
-      );
-      if (pseudo) {
-        const key = selectorName(pseudo) ?? pseudo.type;
-        if (!seenPseudoDiagnostics.has(key)) {
-          seenPseudoDiagnostics.add(key);
-          diagnostics.push({
-            code: 'WF1004',
-            message: `:${key} state variants require the interactive backend (Phase 2); rule skipped`,
-          });
-        }
-        continue;
-      }
+      // Single-class selectors (`.p-4`, `.dark\:bg-zinc-900`) carry no extra
+      // conditions; compound selectors lower their pseudo/attribute/group
+      // tokens into interaction conditions (Phase 11).
+      const lowered = lowerSelectorGroup(group, recordUnsupportedSelector);
+      if (!lowered) continue;
 
-      // MVP: single-class selectors only (`.p-4`, `.dark\:bg-zinc-900`).
-      if (group.length === 1 && first?.type === 'class' && selectorName(first)) {
-        const className = selectorName(first) as string;
-        const existing = classes.get(className);
-        const ruleEntry: CollectedRule = { conditions, declarations };
-        if (locals.size > 0) ruleEntry.locals = locals;
-        if (existing) existing.push(ruleEntry);
-        else classes.set(className, [ruleEntry]);
-      }
-      // Compound / descendant selectors are skipped (interactive phase).
+      const existing = classes.get(lowered.className);
+      const ruleEntry: CollectedRule = {
+        conditions: [...conditions, ...lowered.conditions],
+        declarations,
+      };
+      if (locals.size > 0) ruleEntry.locals = locals;
+      if (existing) existing.push(ruleEntry);
+      else classes.set(lowered.className, [ruleEntry]);
     }
   }
 
@@ -192,11 +321,11 @@ export function collectStylesheet(css: string): CollectedStylesheet {
       const value = nested.value as AnyRecord | undefined;
       if (!value) continue;
       if (nested.type === 'media') {
-        const parsed = parseMediaQuery(value.query as AnyRecord);
+        const parsed = parseMediaQuery(value.query as AnyRecord, {
+          transparentPointerCaps: true,
+        });
         if (!parsed.ok) {
-          if (!isPointerCapabilityFailure(parsed)) {
-            diagnostics.push(mediaDiagnostic(parsed));
-          }
+          diagnostics.push(mediaDiagnostic(parsed));
           continue;
         }
         walkNestedRules(value.rules as AnyRecord[], [...conditions, ...parsed.conditions]);
@@ -222,17 +351,14 @@ export function collectStylesheet(css: string): CollectedStylesheet {
         if (!value) return undefined;
 
         if (anyRule.type === 'media') {
-          const parsed = parseMediaQuery(value.query as AnyRecord);
+          // Tailwind wraps hover:/group-hover: utilities in
+          // `@media (hover: hover)`; that capability gate is transparent
+          // here — the interaction state arrives via component state.
+          const parsed = parseMediaQuery(value.query as AnyRecord, {
+            transparentPointerCaps: true,
+          });
           if (!parsed.ok) {
-            if (isPointerCapabilityFailure(parsed)) {
-              // hover: candidates each get their own @media block; report once.
-              if (!pointerCapabilityDiagnosticEmitted) {
-                pointerCapabilityDiagnosticEmitted = true;
-                diagnostics.push(mediaDiagnostic(parsed));
-              }
-            } else {
-              diagnostics.push(mediaDiagnostic(parsed));
-            }
+            diagnostics.push(mediaDiagnostic(parsed));
             // Remove the rule; returning [] also suppresses child visitation.
             return [];
           }

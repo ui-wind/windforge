@@ -14,31 +14,57 @@
  * subscription mode) applies only to components whose single mapping is the
  * primary `className → style` pair; components with secondary surfaces
  * (e.g. `contentContainerClassName`) subscribe and re-render instead.
+ *
+ * Phase 11 — interaction: `data-*` props on any styled component feed
+ * `data:` conditions (and are stripped like className). Interactive
+ * components (Pressable, TextInput) are hand-written: they capture their own
+ * pressed/hovered/focused/disabled state, evaluate `state:` conditions
+ * against it, and publish it as a group provider when their className
+ * carries a `group`/`group/<name>` marker. The native push path has no
+ * channel for component state yet, so interactive components never link and
+ * always resolve through React props.
  */
 import {
   createElement,
   forwardRef,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
+  useState,
   type ComponentProps,
   type ElementType,
+  type ReactElement,
   type Ref,
 } from 'react';
 import {
   Image as RNImage,
   Pressable as RNPressable,
   Text as RNText,
+  TextInput as RNTextInput,
   View as RNView,
   findNodeHandle,
 } from 'react-native';
 import { getBackend } from './backends/index.js';
+import {
+  GroupContext,
+  groupNamesIn,
+  mergeGroupStates,
+  useGroupStates,
+  type GroupStates,
+} from './group.js';
 import { useConditionState } from './provider.js';
 import type { ClassPropMapping } from './prop-mapping/registry.js';
+import { getArtifacts } from './registry.js';
 import type { ReactNativeStyle } from './resolve.js';
+import type { ComponentState, ConditionState } from './state.js';
 
 export type StyledProps = {
   className?: string;
+} & {
+  /** `data-*` props feed `data:` conditions (Phase 11); styling inputs only,
+   * never forwarded to the host. */
+  [key: `data-${string}`]: string | number | boolean | null | undefined;
 };
 
 function mergeStyles(classNameStyle: ReactNativeStyle, style: unknown): unknown {
@@ -63,6 +89,58 @@ function hostHandleOf(instance: unknown): number | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * Extract `data-*` props into a ComponentState.data snapshot; returns the
+ * remaining props. Data props are styling inputs, not host props — they are
+ * stripped like className. Null/undefined values and non-primitive values
+ * are not forwarded (presence semantics require a defined primitive).
+ */
+function extractDataProps(props: Record<string, unknown>): {
+  data: ComponentState['data'] | undefined;
+  rest: Record<string, unknown>;
+} {
+  let data: ComponentState['data'] | undefined;
+  let rest = props;
+  for (const key of Object.keys(props)) {
+    if (!key.startsWith('data-')) continue;
+    const value = props[key];
+    if (
+      typeof value !== 'string' &&
+      typeof value !== 'number' &&
+      typeof value !== 'boolean'
+    ) {
+      continue;
+    }
+    data ??= {};
+    data[key.slice('data-'.length)] = value;
+    if (rest === props) rest = { ...props };
+    delete rest[key];
+  }
+  return { data, rest };
+}
+
+/**
+ * True when the class string declares `state:`/`data:` condition
+ * dependencies — its resolved style depends on component state, which the
+ * native push path cannot see (no interaction channel yet). Absent
+ * dependency data (legacy artifact), assume yes.
+ */
+function requiresComponentState(className: string): boolean {
+  let sawDependencies = false;
+  for (const artifact of getArtifacts()) {
+    if (!artifact.dependencies) continue;
+    sawDependencies = true;
+    for (const token of className.split(/\s+/)) {
+      const ids = artifact.dependencies[token];
+      if (!ids) continue;
+      if (ids.some((id) => id.startsWith('state:') || id.startsWith('data:'))) {
+        return true;
+      }
+    }
+  }
+  return !sawDependencies;
 }
 
 const PRIMARY_MAPPING: ClassPropMapping[] = [
@@ -100,18 +178,44 @@ export function createStyledElement<Props extends object>(
     // Non-linkable mappings (secondary style surfaces) always subscribe —
     // the native protocol cannot deliver them.
     const state = useConditionState(linkable ? backend.requiresContext() : true);
+    // Group context flows into componentState: styled descendants evaluate
+    // `group-*` conditions against the nearest providers. Consuming the
+    // context is also the JS delivery path — provider state changes
+    // re-render this component on every backend.
+    const groupStates = useGroupStates();
+
+    const { data, rest: dataRest } = extractDataProps(props as Record<string, unknown>);
+
+    let componentState: ComponentState | undefined;
+    if (data || groupStates) {
+      componentState = {};
+      if (data) componentState.data = data;
+      if (groupStates) componentState.groups = groupStates;
+    }
 
     const resolved: Record<string, unknown> = {};
     let primaryClassName: string | undefined;
     for (const mapping of mappings) {
-      const className = (props as Record<string, unknown>)[mapping.classNameProp];
+      const className = dataRest[mapping.classNameProp];
       if (typeof className !== 'string' || !className) continue;
       if (mapping.classNameProp === 'className') primaryClassName = className;
       resolved[mapping.styleProp] = mergeStyles(
-        backend.resolveStyle(className, state),
-        (props as Record<string, unknown>)[mapping.styleProp],
+        backend.resolveStyle(className, state, componentState),
+        dataRest[mapping.styleProp],
       );
     }
+
+    // Native delivery resolves without component state: skip linking when
+    // this component carries data props or its classes depend on group
+    // state — those resolve through React props instead.
+    const linkEligible =
+      linkable &&
+      data === undefined &&
+      !(
+        groupStates !== null &&
+        primaryClassName !== undefined &&
+        requiresComponentState(primaryClassName)
+      );
 
     const hostRef = useRef<unknown>(null);
     const setHostRef = useCallback(
@@ -123,7 +227,7 @@ export function createStyledElement<Props extends object>(
     );
 
     useEffect(() => {
-      if (!linkable || !primaryClassName || backend.link === undefined) return undefined;
+      if (!linkEligible || !primaryClassName || backend.link === undefined) return undefined;
       const handle = hostHandleOf(hostRef.current);
       if (handle === null) return undefined;
       backend.link(handle, primaryClassName, state);
@@ -132,16 +236,16 @@ export function createStyledElement<Props extends object>(
       // (its live state comes from the provider's condition store), and it
       // never changes while the component is unsubscribed.
       // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [backend, linkable, primaryClassName]);
+    }, [backend, linkEligible, primaryClassName]);
 
     // className props are Windforge-only; never forward them to the host.
-    const rest: Record<string, unknown> = { ...props };
+    const rest: Record<string, unknown> = { ...dataRest };
     for (const mapping of mappings) delete rest[mapping.classNameProp];
 
     return createElement(Component, {
       ...rest,
       ...resolved,
-      ref: linkable && backend.link ? setHostRef : ref,
+      ref: linkEligible && backend.link ? setHostRef : ref,
     });
   });
   Styled.displayName = `Windforge${displayName}`;
@@ -155,12 +259,195 @@ function createStyledComponent<Props extends { style?: unknown }>(
   return createStyledElement<Props>(Component, displayName, PRIMARY_MAPPING);
 }
 
+/**
+ * Shared plumbing for the hand-written interactive components: always
+ * subscribes (interaction styles ride React props until the native channel
+ * lands), builds the componentState snapshot, and computes the group
+ * provider value (nearest-wins merge over ancestor groups).
+ */
+function useInteractiveState(options: {
+  className?: string | undefined;
+  pressed?: boolean;
+  hovered?: boolean;
+  focused?: boolean;
+  disabled?: boolean;
+  data?: ComponentState['data'] | undefined;
+}): {
+  state: ConditionState;
+  componentState: ComponentState;
+  groupNames: string[];
+  providedGroups: GroupStates | null;
+} {
+  const {
+    className,
+    pressed = false,
+    hovered = false,
+    focused = false,
+    disabled = false,
+    data,
+  } = options;
+  const state = useConditionState(true);
+  const groupStates = useGroupStates();
+  const componentState = useMemo<ComponentState>(
+    () => ({
+      pressed,
+      hovered,
+      focused,
+      ...(disabled && { disabled: true }),
+      ...(data && { data }),
+      ...(groupStates && { groups: groupStates }),
+    }),
+    [pressed, hovered, focused, disabled, data, groupStates],
+  );
+  const groupNames = useMemo(() => groupNamesIn(className), [className]);
+  const providedGroups = useMemo(
+    () => mergeGroupStates(groupStates, groupNames, { pressed, hovered, focused, disabled }),
+    [groupStates, groupNames, pressed, hovered, focused, disabled],
+  );
+  return { state, componentState, groupNames, providedGroups };
+}
+
+/** Wrap the host element in a group provider when a marker is present. */
+function withGroupProvider(
+  element: ReactElement,
+  groupNames: string[],
+  providedGroups: GroupStates | null,
+): ReactElement {
+  if (groupNames.length === 0) return element;
+  return createElement(GroupContext.Provider, { value: providedGroups }, element);
+}
+
 export type ViewProps = ComponentProps<typeof RNView> & StyledProps;
 export type TextProps = ComponentProps<typeof RNText> & StyledProps;
 export type ImageProps = ComponentProps<typeof RNImage> & StyledProps;
 export type PressableProps = ComponentProps<typeof RNPressable> & StyledProps;
+export type TextInputProps = ComponentProps<typeof RNTextInput> & StyledProps;
+
+type PressHandlerEvent = Parameters<NonNullable<PressableProps['onPressIn']>>[0];
+type HoverHandlerEvent = Parameters<NonNullable<PressableProps['onHoverIn']>>[0];
+type PressableFocusEvent = Parameters<NonNullable<PressableProps['onFocus']>>[0];
+type TextInputFocusEvent = Parameters<NonNullable<TextInputProps['onFocus']>>[0];
 
 export const View = createStyledComponent<ViewProps>(RNView, 'View');
 export const Text = createStyledComponent<TextProps>(RNText, 'Text');
 export const Image = createStyledComponent<ImageProps>(RNImage, 'Image');
-export const Pressable = createStyledComponent<PressableProps>(RNPressable, 'Pressable');
+
+/**
+ * Interactive Pressable: captures pressed/hovered/focused/disabled from its
+ * own events and evaluates `hover:`/`active:`/`focus:`/`disabled:` variants
+ * against them. Carrying a `group`/`group/<name>` marker publishes that
+ * state to styled descendants (`group-hover:` and friends).
+ */
+export const Pressable = forwardRef<unknown, PressableProps>(function Pressable(
+  props,
+  ref: Ref<unknown>,
+) {
+  const {
+    className,
+    style,
+    disabled,
+    onPressIn,
+    onPressOut,
+    onHoverIn,
+    onHoverOut,
+    onFocus,
+    onBlur,
+    ...rest
+  } = props;
+  const [pressed, setPressed] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const backend = getBackend();
+  const { data, rest: forwarded } = extractDataProps(rest as Record<string, unknown>);
+  const { state, componentState, groupNames, providedGroups } = useInteractiveState({
+    className,
+    pressed,
+    hovered,
+    focused,
+    disabled: disabled === true,
+    data,
+  });
+
+  const resolved = mergeStyles(backend.resolveStyle(className ?? '', state, componentState), style);
+
+  const hostProps: Record<string, unknown> = {
+    ...forwarded,
+    style: resolved,
+    disabled,
+    onPressIn: (event: PressHandlerEvent) => {
+      setPressed(true);
+      onPressIn?.(event);
+    },
+    onPressOut: (event: PressHandlerEvent) => {
+      setPressed(false);
+      onPressOut?.(event);
+    },
+    onHoverIn: (event: HoverHandlerEvent) => {
+      setHovered(true);
+      onHoverIn?.(event);
+    },
+    onHoverOut: (event: HoverHandlerEvent) => {
+      setHovered(false);
+      onHoverOut?.(event);
+    },
+    onFocus: (event: PressableFocusEvent) => {
+      setFocused(true);
+      onFocus?.(event);
+    },
+    onBlur: (event: PressableFocusEvent) => {
+      setFocused(false);
+      onBlur?.(event);
+    },
+    ref,
+  };
+  const element = createElement(
+    RNPressable,
+    hostProps as ComponentProps<typeof RNPressable>,
+  );
+  return withGroupProvider(element, groupNames, providedGroups);
+});
+Pressable.displayName = 'WindforgePressable';
+
+/**
+ * Interactive TextInput: captures focus/blur and treats `editable={false}`
+ * as disabled, evaluating `focus:`/`disabled:` variants against them. Group
+ * markers publish the same state to descendants (`group-focus:` …).
+ */
+export const TextInput = forwardRef<unknown, TextInputProps>(function TextInput(
+  props,
+  ref: Ref<unknown>,
+) {
+  const { className, style, editable, onFocus, onBlur, ...rest } = props;
+  const [focused, setFocused] = useState(false);
+  const backend = getBackend();
+  const { data, rest: forwarded } = extractDataProps(rest as Record<string, unknown>);
+  const { state, componentState, groupNames, providedGroups } = useInteractiveState({
+    className,
+    focused,
+    disabled: editable === false,
+    data,
+  });
+
+  const resolved = mergeStyles(backend.resolveStyle(className ?? '', state, componentState), style);
+
+  const hostProps: Record<string, unknown> = {
+    ...forwarded,
+    style: resolved,
+    editable,
+    onFocus: (event: TextInputFocusEvent) => {
+      setFocused(true);
+      onFocus?.(event);
+    },
+    onBlur: (event: TextInputFocusEvent) => {
+      setFocused(false);
+      onBlur?.(event);
+    },
+    ref,
+  };
+  const element = createElement(
+    RNTextInput,
+    hostProps as ComponentProps<typeof RNTextInput>,
+  );
+  return withGroupProvider(element, groupNames, providedGroups);
+});
+TextInput.displayName = 'WindforgeTextInput';

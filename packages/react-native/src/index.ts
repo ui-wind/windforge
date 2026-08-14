@@ -9,14 +9,17 @@ export {
   Image,
   Pressable,
   Text,
+  TextInput,
   View,
   type ImageProps,
   type PressableProps,
   type StyledProps,
+  type TextInputProps,
   type TextProps,
   type ViewProps,
 } from './components.js';
 export { evaluateCondition } from './conditions.js';
+export { GroupContext, useGroupStates, type GroupStates } from './group.js';
 export { __resetBackend, getBackend, selectBackend, setBackend } from './backends/index.js';
 export {
   setFabricNativeAdapter,
@@ -33,11 +36,18 @@ export { __resetRegistry, getArtifacts, registerArtifact } from './registry.js';
 export {
   resolveAnimationMeta,
   resolveClassName,
+  resolveClassNameTiers,
   resolveClassNames,
   toReactNativeValue,
 } from './resolve.js';
-export type { AnimationMeta, ReactNativeStyle } from './resolve.js';
-export { stateSignature, type ConditionState } from './state.js';
+export type { AnimationMeta, ReactNativeStyle, ResolvedTiers } from './resolve.js';
+export {
+  componentStateSignature,
+  stateSignature,
+  type ComponentState,
+  type ConditionState,
+  type GroupInteractionState,
+} from './state.js';
 export {
   getInsets,
   getMetrics,
