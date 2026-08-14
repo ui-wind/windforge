@@ -197,19 +197,19 @@ export function WindforgeProvider(props: WindforgeProviderProps): ReactNode {
         }
       },
     );
-    const dimensionsSubscription = Dimensions.addEventListener('change', ({ window }) => {
+    const dimensionsSubscription = Dimensions.addEventListener('change', (event: { window: { width: number; height: number } }) => {
       // fontScale can change with a dimension change on Android (accessibility
       // font scaling); re-read it alongside the window size.
       const fontScale = PixelRatio.getFontScale();
       if (
-        conditions.windowWidth !== window.width ||
-        conditions.windowHeight !== window.height ||
+        conditions.windowWidth !== event.window.width ||
+        conditions.windowHeight !== event.window.height ||
         conditions.fontScale !== fontScale
       ) {
         setConditions({
           ...conditions,
-          windowWidth: window.width,
-          windowHeight: window.height,
+          windowWidth: event.window.width,
+          windowHeight: event.window.height,
           fontScale,
         });
       }

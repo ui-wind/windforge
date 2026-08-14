@@ -34,8 +34,10 @@ import {
   useState,
   type ComponentProps,
   type ElementType,
+  type ForwardRefExoticComponent,
   type ReactElement,
   type Ref,
+  type RefAttributes,
 } from 'react';
 import {
   Image as RNImage,
@@ -373,9 +375,9 @@ type HoverHandlerEvent = Parameters<NonNullable<PressableProps['onHoverIn']>>[0]
 type PressableFocusEvent = Parameters<NonNullable<PressableProps['onFocus']>>[0];
 type TextInputFocusEvent = Parameters<NonNullable<TextInputProps['onFocus']>>[0];
 
-export const View = createStyledComponent<ViewProps>(RNView, 'View');
-export const Text = createStyledComponent<TextProps>(RNText, 'Text');
-export const Image = createStyledComponent<ImageProps>(RNImage, 'Image');
+export const View: ForwardRefExoticComponent<ViewProps & RefAttributes<unknown>> = createStyledComponent<ViewProps>(RNView, 'View');
+export const Text: ForwardRefExoticComponent<TextProps & RefAttributes<unknown>> = createStyledComponent<TextProps>(RNText, 'Text');
+export const Image: ForwardRefExoticComponent<ImageProps & RefAttributes<unknown>> = createStyledComponent<ImageProps>(RNImage, 'Image');
 
 /**
  * Interactive Pressable: captures pressed/hovered/focused/disabled from its
