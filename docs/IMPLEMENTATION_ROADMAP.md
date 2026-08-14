@@ -824,6 +824,7 @@ Note: iOS simulator CGEvent mouse injection reaches native UIKit views (TextInpu
 - Web CSS backend theme handling deferred to Phase 13 (web currently uses runtime resolution through RNW).
 - Uniwind Pro features excluded by policy.
 - `useAnimatedThemeProgress` (Phase 7) untouched — auto-animate of `dark:` variants remains a follow-up.
+- **React Compiler incompatibility (verified 2026-08-14).** With Expo's `experiments.reactCompiler: true`, the compiled styled-component pipeline loses inline-style precedence over className styles (`mergeStyles([classNameStyle, style])` should let `style` win, but under the compiler the className style wins instead — observed as probe-B magenta not appearing despite `[WF-DEBUG-HOST]` logs showing correct array order). Verified root cause via toggle: with `reactCompiler: false`, the same code renders correctly on-device (inline wins). Kept `reactCompiler: false` in `apps/example/app.json`. Follow-up: investigate compiler-safe patterns for the styled-component factory before enabling. This affects any app that relies on our merge-order contract; users on React Compiler should pin `reactCompiler: false` until resolved.
 
 ### Decisions
 

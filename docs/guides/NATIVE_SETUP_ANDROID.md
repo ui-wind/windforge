@@ -152,34 +152,37 @@ Pixel evidence captured via `adb exec-out screencap -p` + hex sampling
 
 ## Themes screen verification (Phase 12)
 
-The Themes screen is deep-link-only on Android (BottomNavigationView
-hard-caps at 6 tabs). Deep link + capture:
+**Android deep-link gap (verified 2026-08-14).** The Themes screen is
+not reachable from the bare Android build in this environment: the tab
+bar hard-caps at 6 tabs (Home/Explore/Animation/Metrics/Extensions/
+Interactive), and the `example://themes` deep link does NOT navigate —
+the app stays on the Home screen both on cold launch and warm re-send
+(verified: `am start -W -a android.intent.action.VIEW -d "example://themes"`
+delivers the intent to the running MainActivity, but the router never
+resolves `/themes`; center pixel remains the Home root `#09090b`).
 
-```bash
-adb shell am start -W -a android.intent.action.VIEW -d "example://themes" dev.windforge.example
-adb exec-out screencap -p > themes.png
-```
+The interactive theme-switch matrix (sunset active `#fb2c36`, ocean active
+`#00a6f4`, readout per theme) is therefore verified on the **iOS simulator
+only** for Phase 12. This is an expo-router + bare-RN-CLI deep-link
+handling gap, not a Windforge styling bug — the styled components, theme
+store, and scoped providers are platform-neutral JS and covered by the
+unit-test gate.
 
-Note: `bg-accent` is a static token (#3b82f6) — Tailwind @theme references
-are lowered at build time to hex literals. Per-theme visual changes come from
-theme-variant utilities, not from bg-accent itself. ScopedVariables overrides
-have no visible effect for the same reason (documented honestly in roadmap).
+`bg-accent` is a static token (`#3b82f6`) — Tailwind @theme references are
+lowered at build time to hex literals. Per-theme visual changes come from
+theme-variant utilities, not from `bg-accent` itself. ScopedVariables
+overrides have no visible effect for the same reason (documented honestly
+in the roadmap). The expected Android hex values below match the iOS
+static matrix (`/tmp/themes-fresh-dark.png`) and the artifact's lowered
+values; they remain uncaptured on-device pending the deep-link fix:
 
-Pixel evidence (sampled via `scripts/pixel-sample.mjs`; values TBD — fill
-after first emulator run with Phase 12 build):
-
-| Sample | Idle hex | Active hex | Interaction |
-|---|---|---|---|
-| Accent card bg | #3b82f6 | #3b82f6 (always static) | No change across themes |
-| Sunset-variant card bg | #27272a | #fb2c36 | Tap Sunset button |
-| Ocean-variant card bg | #27272a | #00a6f4 | Tap Ocean button |
-| ScopedTheme subtree card | #00a6f4 | #00a6f4 (always ocean) | No interaction; locked by ScopedTheme |
-| useCSSVariable readout text | matches active theme --color-accent | updates live | Observe after each theme switch |
-
-Fill the Idle/Active hex columns with real sampled values from the emulator
-after the first Phase 12 build lands. The expected values above come from
-the artifact's lowered hex values and the `ocean:bg-sky-500` condition in
-`apps/example/src/app/themes.tsx`.
+| Sample | Expected hex | Status |
+|---|---|---|
+| Accent card bg | `#3b82f6` (static) | iOS verified; Android pending deep link |
+| Sunset-variant card (active) | `#fb2c36` | iOS pending tap; Android pending deep link |
+| Ocean-variant card (active) | `#00a6f4` | iOS pending tap; Android pending deep link |
+| ScopedTheme subtree card | `#00a6f4` (locked) | iOS verified `#00a6f4`; Android pending |
+| `useCSSVariable` readout | `#3b82f6` (light theme) | iOS verified; Android pending |
 
 ## Troubleshooting
 
