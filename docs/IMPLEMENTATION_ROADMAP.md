@@ -942,3 +942,23 @@ Post-Phase-15 verification: audit each remaining Uniwind Pro gap against the act
 - **Logical border styles bypass SIDE_BORDER_STYLE.** Physical per-side border styles (`border-top-style` etc.) are special-cased because RN historically only had an all-sides `borderStyle`. RN 0.86+ supports `borderInlineStartStyle`/`borderInlineEndStyle` natively, so these map directly via SIMPLE_PROPERTIES with kind `keyword`.
 - **Vite optimizeDeps unconditionally includes react-native-web.** Adding to include is idempotent for Vite 5–7 (they already prebundle RNW) and necessary for Vite 8. No version-conditional logic needed.
 - **No proprietary code copied.** All implementations from first principles using Windforge's existing architecture. Facts drawn only from public release notes and MIT OSS code.
+
+## Phase 17 — Verification debt ✅
+
+### Goal
+
+Verify the peer dependency ranges widened in Phase 15 actually work with RN 0.87 and Vite 8. Address any type/runtime incompatibilities found.
+
+### Done
+
+- **A1. Vite 8 verification**: Bumped `apps/vite-example` to Vite 8.2.1 + @vitejs/plugin-react 6.0.5. Build and typecheck pass with Rolldown-based prebundler. Full gate (31 tasks) green. Confirms @windforge/vite plugin works correctly with Vite 8, including the optimizeDeps.include config added in Phase 16.
+- **A2. RN 0.87 verification**: Installed react-native@0.87.0 as devDep for typecheck-only verification (apps/example stays on RN 0.86.2 because react-native-reanimated@latest peer range is 0.83–0.86). Found and fixed two breaking changes:
+  - `Dimensions.addEventListener('change', ({ window }) => ...)` → destructured param inferred as `any` due to RN 0.87 generated types typing handler as `Function`. Fixed by annotating parameter structurally: `(event: { window: { width: number; height: number } }) =>`.
+  - `export const Image = createStyledComponent<ImageProps>(...)` → TS2742 non-portable inferred type through RN 0.87 generated StyleSheetTypes. Fixed by adding explicit `ForwardRefExoticComponent<Props & RefAttributes<unknown>>` return type annotations to View/Text/Image exports.
+  - Both fixes are backward-compatible with RN 0.86. 157/157 tests pass against RN 0.87 types; full gate (31 tasks) green at RN 0.86.
+
+### Scope notes
+
+- apps/example remains on RN 0.86.2 + Expo SDK 57 until react-native-reanimated ships 0.87 support. The package-level peer range (`>=0.86 <0.88`) is verified correct.
+- Native iOS/Android build verification requires Xcode/Android SDK not available in this environment. Metro bundle build and JS-level typecheck/tests confirmed.
+- Web E2E integration tests (headless browser pixel verification) deferred to Phase 17-A3.
