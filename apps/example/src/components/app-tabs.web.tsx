@@ -39,6 +39,9 @@ export default function AppTabs() {
           <TabTrigger name="stress" href="/stress" asChild>
             <TabButton>Stress</TabButton>
           </TabTrigger>
+          <TabTrigger name="interactive" href="/interactive" asChild>
+            <TabButton>Interactive</TabButton>
+          </TabTrigger>
         </CustomTabList>
       </TabList>
     </Tabs>

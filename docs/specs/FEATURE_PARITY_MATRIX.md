@@ -26,9 +26,9 @@ Legend:
 | dark mode | P0 | ✓ | ✓ | System/class strategy |
 | platform variants | P0 | ✓ | ✓ | ios/android/web/native |
 | responsive variants | P0 | ✓ | ✓ | Native and web lowering differ |
-| pseudo states | P0 | ✓ | ✓ | Component capability dependent |
-| group variants | P0 | ✓ | ✓ | Native propagation target |
-| data attributes | P1 | capability | ✓ | RNW semantics where available |
+| pseudo states | P0 | ✓ | ✓ | ✅ Phase 11: `active:`/`hover:`/`focus:`/`disabled:` lowered to condition kind `state`; Pressable captures press/hover, TextInput captures focus; two-tier specificity merge (variant declarations outrank base utilities) |
+| group variants | P0 | ✓ | ✓ | ✅ Phase 11: `group`/`group/<name>` → context-based nearest-wins propagation via GroupContext provider; named groups scoped by groupName |
+| data attributes | P1 | capability | ✓ | ✅ Phase 11: `data-[attr=value]:` lowered to condition kind `data`; `data-*` props feed ComponentState.data slot and are stripped from host element |
 | media queries | P1 | capability | ✓ | Backend-specific |
 | container queries | P1 | capability | ✓ | Explicit capability model |
 | rem | P0 | ✓ | ✓ | Platform-aware conversion |

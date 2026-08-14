@@ -108,6 +108,73 @@ container(width > 400)
 
 Backends decide how each condition is lowered.
 
+### Condition kinds
+
+| kind | inputs | evaluated from |
+|---|---|---|
+| `media` | feature + value | environment (window, pixel ratio, …) |
+| `color-scheme` | scheme | environment |
+| `platform` | platform | environment |
+| `layout-direction` | direction | environment |
+| `state` | pseudo state, optional group scope | component state |
+| `data` | attribute name, optional exact value | component state |
+
+Environment conditions are global: every component sees the same value.
+`state` and `data` conditions are local: they evaluate against the state of
+the component (or an ancestor group provider), not the environment.
+
+### State conditions
+
+Pseudo-class selectors (`:hover`, `:focus`, `:active`, `:disabled`) lower to
+`state` conditions. `:focus-visible` collapses to the `focus` state (React
+Native has no separate focus-ring notion).
+
+```text
+hover:bg-red-500    → conditionIds ["state:hover"]
+active:bg-red-500   → conditionIds ["state:active"]
+focus:bg-red-500    → conditionIds ["state:focus"]
+disabled:opacity-50 → conditionIds ["state:disabled"]
+```
+
+Group variants add a group scope to the same condition kind:
+
+```text
+group-hover:bg-red-500        → state:hover:group   { state: "hover", group: true }
+group-hover/sidebar:bg-red-500 → state:hover:group:sidebar { …, groupName: "sidebar" }
+```
+
+Id scheme: `state:<state>` / `state:<state>:group` /
+`state:<state>:group:<name>`.
+
+Pseudo states outside the interactive set (e.g. `:visited`, `:checked`)
+are not lowered; the compiler reports one deduplicated WF1004 per selector.
+
+Evaluation maps CSS pseudo states to component-state flags:
+`hover → hovered`, `focus → focused`, `active → pressed`,
+`disabled → disabled`. A group condition reads the matching group slot
+(`groupName`, default `""`) instead of the component's own flags.
+
+### Data conditions
+
+`data-*` variants lower to `data` conditions with a name and an optional
+exact value:
+
+```text
+data-[open]:bg-cyan-500             → data:open          { name: "open" }
+data-[selected=true]:bg-emerald-500 → data:selected=true { name: "selected", value: "true" }
+```
+
+Semantics:
+
+- Without `value`: presence — active when the component carries a defined
+  `data-<name>` attribute (any value, including `false` or `""`).
+- With `value`: exact match after string normalization — `data-[selected=true]`
+  matches `data-selected={true}` and `data-selected="true"` but not `false`.
+- Null/undefined attribute values never activate a data condition.
+
+Interactive variants stack with environment variants as ordinary
+and-conditions (`hover:dark:bg-red-700` → `["color-scheme:dark", "state:hover"]`).
+
 ## Animation IR
 
 Animation must be separate from ordinary declarations.

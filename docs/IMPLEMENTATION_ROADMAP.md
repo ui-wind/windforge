@@ -742,6 +742,57 @@ These are the Phase 10 decision records (Rule 13).
 Demo: `apps/bare/src/App.tsx`. Verification runbook:
 `docs/guides/NATIVE_SETUP_BARE.md`.
 
+## Phase 11 — Interactive variants (`active/focus/disabled/hover`, `group-*`, `data-*`)
+
+**Goal:** pseudo-state, group-propagation, and data-attribute variants resolve from component state at runtime; compiler lowers them to condition kinds `state` and `data`.
+
+### Done
+
+- Compiler (`css/collect.ts`): `:hover`/`:focus`/`:active`/`:disabled` selectors lower to condition kind `state`; `group-hover:` → `state` + `group:true` + optional `groupName`; `data-[attr=value]:` → condition kind `data` (exact-match or boolean presence). `STYLE_IR_SPEC.md` updated with `state` and `data` condition entries.
+- Runtime (`resolve.ts`): two-tier specificity merge — base declarations merge in token order first, then ALL active variant declarations overlay on top regardless of token position (CSS specificity semantics). `resolveClassNameTiers()` returns `ResolvedTiers {base, variant}`; cache keyed by `registryVersion|className|stateSignature|componentStateSignature`.
+- Runtime (`state.ts`): `ComponentState {pressed?, hovered?, focused?, disabled?, groups?: Record<string, GroupInteractionState>, data?: Record<string, unknown>}`; stable `componentStateSignature()`.
+- Runtime (`group.ts`): `GroupContext` React context provider; nearest-wins for same name; anonymous group = empty-string key; named groups scoped by `groupName`. `useGroupStates()` reads ancestor group state automatically.
+- Components (`components.tsx`): `Pressable` captures press via `onPressIn/onPressOut` and hover via `onHoverIn/onHoverOut`; provides own group state when `className` contains `group` or `group/<name>`; `TextInput` captures focus/blur; both pass `ComponentState` to `resolveClassNames`. `editable={false}` treated as disabled. `data-*` props feed `ComponentState.data` and are stripped from the host element.
+- `styled()` mapping (`prop-mapping/styled.ts`): custom components receive resolved styles with component state support; `data-*` props handled identically.
+- Tests: `interactive.test.tsx` (20 tests) covers Pressable press/hover/disabled, TextInput focus, group propagation (anonymous, named, nearest-wins), data conditions, styled(), useWindforgeStyle with component state. `resolve.test.ts` extended with specificity-order tests (variant outranks base regardless of token order). All green.
+- Example screen: `apps/example/src/app/interactive.tsx` demos every interactive lowering — pressed card (`active:bg-emerald-500`), hover card (`hover:bg-blue-500`), focus input (`focus:bg-amber-500`), disabled Pressable + TextInput (`disabled:opacity-50`), anonymous group (`group-active:text-emerald-400`), named group (`group/card` + `group-active/card:text-blue-400`), data toggle (`data-[selected=true]:bg-emerald-500`).
+
+### Measured
+
+| Surface | Idle hex | Active hex | Method | Date |
+|---|---|---|---|---|
+| Pressed card bg (Android) | #3b82f6 | #00bc7d | adb screencap pixel sample | 2026-08-13 |
+| Focus input bg (Android) | #ffffff | #fe9a0b | adb screencap pixel sample | 2026-08-13 |
+| Anonymous group bg (Android) | #27272a | #3f3f46 | adb screencap pixel sample | 2026-08-13 |
+| Anonymous group child text (Android) | #d4d4d8 | #00d492 | adb screencap pixel sample | 2026-08-13 |
+| Named group child text (Android) | #d4d4d8 | #51a2ff | adb screencap pixel sample | 2026-08-13 |
+| Named group control child (Android) | #71717b | #71717b (unchanged) | adb screencap pixel sample | 2026-08-13 |
+| Data target bg (Android) | #27272a | #00bc7d | adb screencap pixel sample | 2026-08-13 |
+| Disabled Pressable over dark (Android) | #224681 (static) | n/a | adb screencap pixel sample | 2026-08-13 |
+| Disabled input (Android) | #848485 (static) | n/a | adb screencap pixel sample | 2026-08-13 |
+| Pressed/hover cards idle bg (iOS sim) | #3b82f6 | — | simctl screenshot pixel sample | 2026-08-13 |
+| Focus input bg (iOS sim) | #ffffff | #fe9a00 | simctl screenshot pixel sample | 2026-08-13 |
+| Disabled Pressable over dark (iOS sim) | #224681 (static) | n/a | simctl screenshot pixel sample | 2026-08-13 |
+| Disabled input (iOS sim) | #848485 (static) | n/a | simctl screenshot pixel sample | 2026-08-13 |
+| Group card bg idle (iOS sim) | #27272a | — | simctl screenshot pixel sample | 2026-08-13 |
+| Group child texts idle (iOS sim) | #d4d4d8 / #71717b | — | simctl screenshot pixel sample | 2026-08-13 |
+
+Note: iOS simulator CGEvent mouse injection reaches native UIKit views (TextInput focus, UIAlert buttons) but does not trigger Fabric JS touch responders (Pressable onPressIn, ScrollView scroll). Window geometry verified identical to calibration (window 49365 at 1991,127 size 392x845); no occlusion confirmed. iOS pressed/group/data active-state pixels therefore verified via unit tests + Android device only. This is a simulator-input-environment limitation, not a Windforge defect.
+
+### Scope notes
+
+- `hover:` on native RN requires pointer-capable devices (iPad with trackpad/mouse); on phone-class devices it is inert (no hover hardware). The compiler still lowers it; the runtime evaluates the `hovered` flag which stays false without hardware hover events. Web receives pure CSS `:hover` (Phase 13).
+- The two-tier specificity merge is O(n) per resolution: one pass collects base declarations in token order, a second pass overlays all active variant declarations. No sorting needed because variants always win over base.
+- Group propagation uses React context (not global state). Nearest-wins is implemented by each provider reading its parent's context and shadowing the same group name. Performance cost: one context read per styled descendant per render; acceptable for typical UI trees.
+- `data-*` prop stripping: any prop starting with `data-` is consumed by the resolver and removed from the host element's props. This prevents RN warnings about unknown props on native views.
+
+### Decisions
+
+- **Two-tier merge vs. single-pass sort.** Single-pass would require tracking specificity weight per declaration and sorting. Two-tier is simpler and matches CSS semantics exactly: conditional selectors always outrank plain utilities regardless of source order.
+- **Context-based group propagation vs. global store.** Context is the natural React pattern for tree-scoped state; nearest-wins falls out naturally from nested providers. Global store would require manual ancestor tracking.
+- **No copying Uniwind implementation.** Group propagation designed from first principles: small `GroupContext` provider, `useGroupStates()` consumer hook. Facts/patterns from Uniwind MIT OSS informed the design (named groups, nearest-wins), but zero implementation code was copied.
+- **iOS pressed/group/data verification gap documented honestly.** Per Rule 14 (no fabrication), the simulator input limitation is stated explicitly rather than claiming full iOS pixel coverage that wasn't achieved.
+
 ## Phase 14 — Flutter research
 
 Only now evaluate the Flutter backend.

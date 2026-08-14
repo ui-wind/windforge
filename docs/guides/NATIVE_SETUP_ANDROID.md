@@ -123,6 +123,33 @@ Animation/Metrics/Extensions render through the same runtime path; their
 detailed verification sections live in `NATIVE_SETUP_IOS.md` because the
 fabric backend counters (`directCommits`, `commitsMutated`) are iOS-only.
 
+## Interactive screen verification (Phase 11)
+
+The Interactive entry (under **More** in the tab bar;
+`apps/example/src/app/interactive.tsx`) demos pseudo-state, group-propagation,
+and data-attribute variants. Deep link:
+
+```bash
+adb shell am start -W -a android.intent.action.VIEW -d "example://interactive" dev.windforge.example
+adb exec-out screencap -p > interactive.png
+```
+
+Pixel evidence captured via `adb exec-out screencap -p` + hex sampling
+(`scripts/pixel-sample.mjs`). All values from a real Pixel_9 emulator run
+(2026-08-13):
+
+| Sample | Idle hex | Active hex | Interaction |
+|---|---|---|---|
+| Pressed card bg | #3b82f6 | #00bc7d | Long-press (hold 800ms) |
+| Focus input bg | #ffffff | #fe9a0b | Tap to focus |
+| Disabled Pressable over dark | #224681 | n/a (static) | opacity-50 at idle |
+| Disabled TextInput | #848485 | n/a (static) | opacity-50 at idle |
+| Anonymous group card bg | #27272a | #3f3f46 | Long-press card |
+| Anonymous group child text | #d4d4d8 | #00d492 | Long-press parent card |
+| Named group child text | #d4d4d8 | #51a2ff | Long-press parent card |
+| Named group control child | #71717b | #71717b (unchanged) | Confirms named-group scoping |
+| Data target bg | #27272a | #00bc7d | Tap toggle, then sample target |
+
 ## Troubleshooting
 
 - **`Could not find device with name: emulator-5554`** — pass the AVD name

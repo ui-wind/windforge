@@ -382,6 +382,37 @@ Troubleshooting notes from the Phase 8 verification runs:
   artifact compiles once at Metro startup, so restart Metro and terminate
   the app before re-verifying.
 
+## Interactive screen verification (Phase 11)
+
+The Interactive entry (under **More** in the tab bar;
+`apps/example/src/app/interactive.tsx`) demos pseudo-state, group-propagation,
+and data-attribute variants resolved from component state. The simulator deep
+link is `example://interactive` (or `exp+windforge-example://--/interactive`):
+
+```bash
+xcrun simctl openurl booted "example://interactive"
+```
+
+Check the following (idle-state pixel evidence captured via `simctl io booted screenshot` + hex sampling):
+
+- **Pressed card** (`active:bg-emerald-500`) — idle background `#3b82f6` (accent). Long-press should flip to emerald `#00bc7d`. iOS simulator limitation: CGEvent mouse injection does not trigger Fabric JS touch responders for Pressable components; pressed-state pixels verified on Android device only. Unit tests (`interactive.test.tsx`) cover the press logic platform-neutrally.
+- **Hover card** (`hover:bg-blue-500`) — idle background `#3b82f6`. Hover requires pointer-capable hardware (iPad trackpad/mouse); inert on phone-class devices. Verified idle hex matches expected accent token.
+- **Focus input** (`focus:bg-amber-500`) — idle background `#ffffff`; tapping the field flips to amber `#fe9a00` (Tailwind v4 oklch→sRGB rounding of amber-500). Focus tap works via native UIKit text view; verified by pixel sample at device coordinates (201,636 pt).
+- **Disabled Pressable** (`disabled:opacity-50`) — renders at reduced opacity over dark background; sampled `#224681` (accent at 50% over zinc-950). Static state, no interaction needed.
+- **Disabled TextInput** (`editable={false}` + `disabled:opacity-50`) — sampled `#848485` (white at 50% over zinc-950). Static state.
+- **Anonymous group card** (`group active:bg-zinc-700`, child `group-active:text-emerald-400`) — idle card background `#27272a` (zinc-800); child text `#d4d4d8` (zinc-300) at idle. Active states (card → `#3f3f46`, child text → `#00d492`) verified on Android device.
+- **Named group card** (`group/card active:bg-zinc-700`, child `group-active/card:text-blue-400`) — idle child text `#d4d4d8`; control child `#71717b` (zinc-500). Named group active state (child → `#51a2ff`, control unchanged) verified on Android device.
+- **Data toggle** (`data-[selected=true]:bg-emerald-500`) — below the fold at idle. Target idle `#27272a`; toggled `#00bc7d` verified on Android device.
+
+iOS simulator input limitation: CGEvent mouse events reach native UIKit views
+(TextInput focus, UIAlert buttons) but do not trigger the Fabric JS touch
+responder path used by Pressable and ScrollView. Window geometry was verified
+identical to calibration (window 49365 at origin 1991,127 size 392x845); no
+occlusion present. This is a known simulator-input-environment constraint, not
+a Windforge defect. Full pressed/group/data active-state verification uses the
+Android device runbook (`NATIVE_SETUP_ANDROID.md`) and unit tests
+(`packages/react-native/tests/interactive.test.tsx`).
+
 ## Troubleshooting
 
 - **"WindforgeStyle TurboModule not found" warning** — the app is running

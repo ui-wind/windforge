@@ -1,5 +1,5 @@
 import { NativeTabs } from 'expo-router/unstable-native-tabs';
-import { useColorScheme } from 'react-native';
+import { Platform, useColorScheme } from 'react-native';
 
 import { Colors } from '@/constants/theme';
 
@@ -44,16 +44,29 @@ export default function AppTabs() {
         />
       </NativeTabs.Trigger>
 
-      <NativeTabs.Trigger name="extensions">
-        <NativeTabs.Trigger.Label>Extensions</NativeTabs.Trigger.Label>
+      {/* Android's BottomNavigationView hard-caps at 6 tab items (RNScreens
+          redboxes at index 6), so the Extensions demo is deep-link-only on
+          Android (`example://extensions`); iOS and web keep the full list. */}
+      {Platform.OS !== 'android' && (
+        <NativeTabs.Trigger name="extensions">
+          <NativeTabs.Trigger.Label>Extensions</NativeTabs.Trigger.Label>
+          <NativeTabs.Trigger.Icon
+            src={require('@/assets/images/tabIcons/explore.png')}
+            renderingMode="template"
+          />
+        </NativeTabs.Trigger>
+      )}
+
+      <NativeTabs.Trigger name="stress">
+        <NativeTabs.Trigger.Label>Stress</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon
           src={require('@/assets/images/tabIcons/explore.png')}
           renderingMode="template"
         />
       </NativeTabs.Trigger>
 
-      <NativeTabs.Trigger name="stress">
-        <NativeTabs.Trigger.Label>Stress</NativeTabs.Trigger.Label>
+      <NativeTabs.Trigger name="interactive">
+        <NativeTabs.Trigger.Label>Interactive</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon
           src={require('@/assets/images/tabIcons/explore.png')}
           renderingMode="template"
