@@ -632,3 +632,43 @@ describe('logical box shorthands (px-*/py-*/mx-*/my-*)', () => {
     });
   });
 });
+
+describe('border-inline-start/end lowering (Phase 16)', () => {
+  it('lowers border-s-2 to borderInlineStartWidth + borderInlineStartStyle without WF1003', async () => {
+    const { artifact, diagnostics } = await buildUtilities(['border-s-2']);
+    expect(diagnostics).toEqual([]);
+    expect(findProperty(artifact.styles['border-s-2'].base, 'borderInlineStartWidth')?.value).toEqual({
+      kind: 'number',
+      value: 2,
+    });
+    // Tailwind v4 emits border-inline-start-style: var(--tw-border-style) → solid
+    expect(findProperty(artifact.styles['border-s-2'].base, 'borderInlineStartStyle')?.value).toEqual({
+      kind: 'string',
+      value: 'solid',
+    });
+  });
+
+  it('lowers border-e-4 to borderInlineEndWidth without WF1003', async () => {
+    const { artifact, diagnostics } = await buildUtilities(['border-e-4']);
+    expect(diagnostics).toEqual([]);
+    expect(findProperty(artifact.styles['border-e-4'].base, 'borderInlineEndWidth')?.value).toEqual({
+      kind: 'number',
+      value: 4,
+    });
+  });
+
+  it('lowers border-s-red-500 to borderInlineStartColor', async () => {
+    const { artifact, diagnostics } = await buildUtilities(['border-s-red-500']);
+    expect(diagnostics).toEqual([]);
+    const colorDecl = findProperty(artifact.styles['border-s-red-500'].base, 'borderInlineStartColor');
+    expect(colorDecl).toBeDefined();
+    expect(colorDecl?.value.kind).toBe('color');
+  });
+
+  it('combined border-s-2 and border-e-4 emit both with zero WF1003', async () => {
+    const { artifact, diagnostics } = await buildUtilities(['border-s-2', 'border-e-4']);
+    expect(diagnostics.filter((d) => d.code === 'WF1003')).toEqual([]);
+    expect(findProperty(artifact.styles['border-s-2'].base, 'borderInlineStartWidth')).toBeDefined();
+    expect(findProperty(artifact.styles['border-e-4'].base, 'borderInlineEndWidth')).toBeDefined();
+  });
+});

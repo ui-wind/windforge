@@ -86,6 +86,14 @@ export const KNOWN_CANONICAL_PROPERTIES = [
   'borderTopRightRadius',
   'borderBottomLeftRadius',
   'borderBottomRightRadius',
+  // Logical border properties (Phase 16 — border-s/border-e parity).
+  // RN 0.86+ supports per-side logical borders natively.
+  'borderInlineStartWidth',
+  'borderInlineEndWidth',
+  'borderInlineStartColor',
+  'borderInlineEndColor',
+  'borderInlineStartStyle',
+  'borderInlineEndStyle',
   // paint
   'backgroundColor',
   'color',

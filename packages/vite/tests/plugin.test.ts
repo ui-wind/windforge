@@ -65,4 +65,14 @@ describe('windforge vite plugin', () => {
     const second = await plugin.load?.('\0windforge/generated');
     expect(first).toBe(second); // Same string reference = cached.
   });
+
+  it('includes react-native-web in optimizeDeps for Vite 8 compatibility (Phase 16)', () => {
+    const plugin = makePlugin();
+    const cfg = plugin.config?.();
+    expect(cfg).toBeDefined();
+    const include = (cfg as Record<string, unknown>)?.optimizeDeps as
+      | { include?: string[] }
+      | undefined;
+    expect(include?.include).toContain('react-native-web');
+  });
 });

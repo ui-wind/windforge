@@ -132,6 +132,15 @@ const SIMPLE_PROPERTIES: Record<string, { target: CanonicalProperty; kind: Value
   'border-right-color': { target: 'borderRightColor', kind: 'color' },
   'border-bottom-color': { target: 'borderBottomColor', kind: 'color' },
   'border-left-color': { target: 'borderLeftColor', kind: 'color' },
+  // Logical border properties (Phase 16 — border-s/border-e parity).
+  // RN 0.86+ supports per-side logical borders natively; unlike physical
+  // per-side styles, these map directly without the SIDE_BORDER_STYLE workaround.
+  'border-inline-start-width': { target: 'borderInlineStartWidth', kind: 'dimension' },
+  'border-inline-end-width': { target: 'borderInlineEndWidth', kind: 'dimension' },
+  'border-inline-start-color': { target: 'borderInlineStartColor', kind: 'color' },
+  'border-inline-end-color': { target: 'borderInlineEndColor', kind: 'color' },
+  'border-inline-start-style': { target: 'borderInlineStartStyle', kind: 'keyword' },
+  'border-inline-end-style': { target: 'borderInlineEndStyle', kind: 'keyword' },
   // Per-corner radii (Phase 15 — joined corner utilities like
   // `rounded-tl-lg rounded-br-xl`). The shorthand form expands in the typed
   // path; these mappings handle the individual CSS longhands that Tailwind

@@ -54,6 +54,8 @@ const CSS_VIRTUAL_ID = '\0windforge/styles.css';
 type VitePlugin = {
   name: string;
   enforce?: 'pre' | 'post';
+  /** Phase 16: return a partial Vite config to merge (e.g. optimizeDeps). */
+  config?: () => Record<string, unknown> | undefined;
   resolveId?: (id: string, importer?: string) => string | null | undefined;
   load?: (id: string) => string | null | undefined | Promise<string | null | undefined>;
   transform?: (code: string, id: string) => { code: string; map?: null } | null | undefined | Promise<{ code: string; map?: null } | null | undefined>;
@@ -118,6 +120,17 @@ export function windforge(options: WindforgeViteOptions): VitePlugin {
   return {
     name: 'windforge',
     enforce: 'pre',
+
+    // Phase 16: react-native-web ships ESM (`module` field) but lacks
+    // "type": "module", so Vite 8's Rolldown prebundler may not detect it.
+    // Explicit inclusion forces prebundling across Vite 5–8.
+    config() {
+      return {
+        optimizeDeps: {
+          include: ['react-native-web'],
+        },
+      };
+    },
 
     resolveId(id) {
       if (id === 'windforge/generated') return GENERATED_ID;
