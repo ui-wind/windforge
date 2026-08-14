@@ -1,25 +1,71 @@
 # Web — export & verification runbook
 
-Windforge on web runs the **runtime-resolution backend** on top of
-`react-native-web`: the Metro plugin still compiles the Tailwind surface
-into the versioned artifact (`apps/example/.windforge/generated.js`), and
-styled primitives from `@windforge/react-native` resolve classNames through
-it at render time. `installNativeDelivery()` is a no-op on web, and
-`getWindforgeStyleModule()` returns null before ever touching
-`TurboModuleRegistry` (react-native-web does not export it — see
-"Web quirks" below).
+Windforge on web supports two backends:
 
-Status: **web verified via static export + headless Chrome screenshots**
-(Phase 9). There is no CSS backend yet; `docs/specs/WEB_BACKEND_SPEC.md`
-remains design-only.
+1. **CSS-first (Phase 13, default for Vite)**: The `@windforge/vite` plugin
+   compiles Tailwind CSS at build time and serves it as a static stylesheet.
+   The `web-css` backend returns `{ className }` from `resolveStyle()`, and
+   the browser evaluates hover/focus/active/media via pure CSS pseudo-selectors.
+   No runtime IR resolution on web — zero JS overhead for styling.
 
-## Requirements
+2. **Runtime-resolution (legacy, Metro web)**: Metro compiles the artifact and
+   styled primitives from `@windforge/react-native` resolve classNames at render
+   time via react-native-web. `installNativeDelivery()` is a no-op on web.
+
+Status: **CSS-first verified via Vite build + headless Chrome pixel-verify**
+(Phase 13). Runtime-resolution was previously verified (Phase 9).
+
+## CSS-first setup (Vite)
+
+### Requirements
+
+- Node 22 + pnpm (same toolchain as the rest of the monorepo)
+- Vite 5/6/7 with `@windforge/vite` plugin
+
+### Configuration
+
+```ts
+// vite.config.ts
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import windforge from '@windforge/vite';
+
+export default defineConfig({
+  plugins: [
+    react(),
+    windforge({
+      entry: './src/global.css',
+    }),
+  ],
+});
+```
+
+### Entry point
+
+```tsx
+// src/main.tsx
+import 'windforge/styles.css';  // virtual module from @windforge/vite
+```
+
+The plugin provides two virtual modules:
+- `windforge/styles.css` — compiled CSS (import in your entry)
+- `windforge/generated` — artifact module (for RNW interop)
+
+### Building & serving
+
+```bash
+cd apps/vite-example
+pnpm build
+npx serve dist -l 4174
+```
+
+## Runtime-resolution setup (Metro web)
 
 - Node 22 + pnpm (same toolchain as the rest of the monorepo)
 - A static file server (`npx serve` is enough)
 - Google Chrome for headless screenshots (verified: `--headless=new`)
 
-## Export + serve
+## Headless screenshots (Metro web)
 
 ```bash
 pnpm --filter windforge-example exec expo export --platform web
@@ -32,7 +78,45 @@ The export prerenders one `.html` shell per route (8 routes verified:
 (`animation.web.tsx`, `metrics.web.tsx`, `extensions.web.tsx`) so the web
 bundle stays free of Reanimated and the native extension surface.
 
-## Headless screenshots
+## Headless screenshots (Vite, CSS-first)
+
+```bash
+cd apps/vite-example
+pnpm build
+npx serve dist -l 4174
+```
+
+Then take a screenshot:
+
+```bash
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+  --headless=new --disable-gpu --hide-scrollbars \
+  --window-size=430,932 \
+  --virtual-time-budget=15000 --timeout=30000 \
+  --screenshot=/tmp/wf-vite-web/index.png http://localhost:4174/
+```
+
+### Pixel verification (Vite, CSS-first)
+
+Same tool as native matrices (`scripts/pixel-sample.mjs`, pngjs-based):
+
+```bash
+node scripts/pixel-sample.mjs /tmp/wf-vite-web/index.png 5,500
+```
+
+Verified values (430x932 viewport, light mode):
+
+| route | point | expected |
+|---|---|---|
+| `/` | (5,500) | `#09090b` (zinc-950 root bg) |
+| `/` | (215,130) | `#3b82f6` (bg-accent token card) |
+
+The vite-example uses plain DOM elements with className directly (not RNW
+components), proving the CSS pipeline end-to-end without the RNW style-prop
+bridging. Hover/focus/active/dark/responsive variants are all pure CSS
+pseudo-selectors and media queries in the emitted stylesheet.
+
+## Headless screenshots (Metro web)
 
 ```bash
 "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
@@ -49,7 +133,7 @@ Other routes: `/explore.html`, `/animation.html`, `/metrics.html`,
 byte-identical except ~2 meta lines — **hydration decides which screen
 renders**. Without letting JS run, every route screenshots the same shell.
 
-## Pixel verification
+## Pixel verification (Metro web)
 
 Same tool as the native matrices (`scripts/pixel-sample.mjs`, pngjs-based):
 

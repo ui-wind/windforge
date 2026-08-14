@@ -837,6 +837,43 @@ Note: iOS simulator CGEvent mouse injection reaches native UIKit views (TextInpu
 
 Demo + verification: `apps/example/src/app/themes.tsx`; pixel-verify runbook in `NATIVE_SETUP_IOS.md` and `NATIVE_SETUP_ANDROID.md`.
 
+## Phase 13 — Web CSS backend + Vite plugin ✅
+
+**Goal:** IR → canonical CSS lowering with stable class names; web artifact = CSS file + module export; hover/focus/active on web via pure CSS; Metro platform-split (native IR vs. web CSS); `@windforge/vite` package; `apps/vite-example` + headless Chrome pixel-verify.
+
+### Done
+
+- **Tailwind pipeline (`packages/tailwind/src/index.ts`)**: `generate({ platform: 'web' })` returns raw Tailwind-compiled CSS in `result.css`. Class names are stable identity (no renaming). Native-only selectors (e.g. `ios:`) are not filtered from web CSS — harmless, avoids divergent outputs. Tests in `pipeline.test.ts` verify CSS content, determinism, and native-default omission of the `css` field.
+- **Web-css backend (`packages/react-native/src/backends/css.ts`)**: `resolveStyle(className)` returns `{ className: trimmed }` (or `{}` if empty). `requiresContext: () => true` for theme re-renders. No link/unlink/onConditionsChanged/onThemeChanged — browser evaluates hover/focus/active/media via pure CSS pseudo-selectors. Registered via `registerBackend('web-css', ...)`.
+- **Metro platform-split (`packages/metro/src/compiler.ts`, `resolver.ts`)**: `compileWindforge({ platform: 'web' })` emits both native IR artifact (`generated.js`) AND web outputs (`styles.css` raw CSS + `generated.web.js` module exporting `cssPath` + re-exporting `registerArtifact`). Resolver serves `generated.web.js` when Metro's platform param is `'web'` and the file exists (`existsSync` guard for native-only compiles). `webResolution: 'runtime'` skips web compilation entirely (fallback flag). Watch mode regenerates web CSS on change with hash-compare skip.
+- **Vite plugin (`packages/vite/`)**: virtual ids `\0windforge/generated` (artifact module) and `\0windforge/styles.css` (compiled CSS); transform intercepts the entry CSS file; cached compilation; HMR via `handleHotUpdate` + `invalidateAll`. 7 tests covering virtual module resolution, CSS transform, cache invalidation, HMR, diagnostics, and error handling.
+- **Example app (`apps/vite-example/`)**: plain DOM elements with className directly (not RNW components), proving the CSS pipeline end-to-end. Demonstrates bg-accent token, hover:bg-red-500, dark:bg-zinc-900, sm:bg-green-700. Builds cleanly with vite v6.4.3; dist CSS ~6 kB.
+- **Docs**: `WEB_SETUP.md` updated with two-backend structure (CSS-first Vite + runtime-resolution Metro), configuration examples, virtual module docs, and separate pixel verification tables per backend.
+
+### Measured
+
+| Surface | Point | Expected hex | Method | Date |
+|---|---|---|---|---|
+| Root bg (vite-example) | (5,500) | `#09090b` (zinc-950) | headless Chrome pixel sample | 2026-08-13 |
+| Accent card bg (vite-example) | (215,130) | `#3b82f6` (bg-accent token) | headless Chrome pixel sample | 2026-08-13 |
+| Hover card idle bg (vite-example) | (215,200) | `#27272a` (zinc-800) | headless Chrome pixel sample | 2026-08-13 |
+
+Note: hover/focus/active states verified structurally via CSS output inspection (pseudo-selectors present in emitted stylesheet) rather than interactive pixel sampling (headless Chrome screenshot is static). Dark mode and responsive variants similarly verified via CSS content assertions in tests.
+
+### Decisions
+
+- **Plain DOM in vite-example, not RNW components.** The vite-example uses `<div className="...">` directly to prove the CSS pipeline without the RNW style-prop bridging gap. RNW className delivery remains a future concern.
+- **Native-only selectors not filtered from web CSS.** Filtering would create divergent outputs between platforms and add complexity. Unused selectors in web CSS are harmless (browser ignores them).
+- **Runtime-resolution kept as fallback behind config flag.** `webResolution: 'runtime'` preserves the existing Metro web path until full parity proof. CSS-first is the default for new Vite setups.
+- **No copying Uniwind/NativeWind implementation.** Vite plugin designed from first principles using standard Vite plugin API patterns. Facts from reference projects informed the architecture (virtual modules, CSS emission) but zero implementation code was copied.
+- **SSR-safe deterministic output.** Same input always produces same CSS output regardless of build environment. Verified via determinism test in pipeline.test.ts.
+
+### Scope notes
+
+- The web-css backend does not support `calc()`/`runtime` IR kinds — these remain native-only. Follow-up phases may add web lowering for these.
+- The vite-example does not use React Native Web. It demonstrates the styling engine's CSS output independently of any RN abstraction layer.
+- Headless Chrome screenshots are light-mode only. Dark mode verification requires CDP `Emulation.setEmulatedMedia` which is not scripted in the runbook.
+
 ## Phase 14 — Flutter research
 
 Only now evaluate the Flutter backend.

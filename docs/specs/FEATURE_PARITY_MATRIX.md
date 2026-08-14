@@ -75,13 +75,16 @@ Legend:
 | Feature | Priority | Notes |
 |---|---:|---|
 | React Native Web | P0 | Same className API |
-| deterministic CSS generation | P0 | Cache/reuse |
-| SSR-safe output | P1 | No runtime stylesheet injection when avoidable |
-| media queries | P0 | CSS lowering |
-| hover/focus/active | P0 | Native web events/CSS |
+| deterministic CSS generation | P0 | ✅ Phase 13: `generate({ platform: 'web' })` produces identical CSS across builds |
+| SSR-safe output | P1 | ✅ Phase 13: no runtime stylesheet injection; CSS emitted at build time |
+| media queries | P0 | ✅ Phase 13: pure CSS lowering via Tailwind compiler |
+| hover/focus/active | P0 | ✅ Phase 13: web-css backend returns `{ className }`; browser evaluates pseudo-selectors in emitted CSS |
 | container queries | P1 | CSS lowering |
 | CSS variables | P0 | Native CSS variables |
-| responsive breakpoints | P0 | CSS media queries |
+| responsive breakpoints | P0 | ✅ Phase 13: pure CSS media queries in emitted stylesheet |
+| CSS-first backend (Vite) | P0 | ✅ Phase 13: `@windforge/vite` plugin serves compiled CSS as virtual module; zero JS overhead for styling on web |
+| Metro web platform-split | P0 | ✅ Phase 13: `compileWindforge({ platform: 'web' })` emits native IR + web CSS artifacts; resolver routes by platform |
+| Vite plugin | P0 | ✅ Phase 13: `@windforge/vite` with virtual modules, cached compilation, HMR support |
 
 ## Developer experience
 
